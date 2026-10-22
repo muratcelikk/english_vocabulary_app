@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="tr" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinguaSQLite - Hikaye & Kelime Öğrenme Platformu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        },
+                        accent: {
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.4);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.7);
+        }
+        .word-token {
+            transition: all 0.15s ease;
+            cursor: pointer;
+            border-bottom: 2px dotted rgba(148, 163, 184, 0.4);
+            padding: 0 2px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+        .word-token:hover {
+            background-color: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+            border-bottom-color: #818cf8;
+        }
+        .word-learned {
+            border-bottom: 2px solid #22c55e !important;
+            background-color: rgba(34, 197, 94, 0.12);
+            color: #86efac;
+        }
+        .word-learning {
+            border-bottom: 2px solid #f59e0b !important;
+            background-color: rgba(245, 158, 11, 0.12);
+            color: #fde047;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .word-correct {
+            background-color: rgba(34, 197, 94, 0.25) !important;
+            border-bottom: 2px solid #22c55e !important;
+            color: #4ade80 !important;
+            border-radius: 4px;
+        }
+        .word-wrong {
+            background-color: rgba(239, 68, 68, 0.25) !important;
+            border-bottom: 2px solid #ef4444 !important;
+            color: #f87171 !important;
+            border-radius: 4px;
+            animation: pulse-red 1.5s infinite;
+        }
+        @keyframes pulse-red {
+            0%, 100% { background-color: rgba(239, 68, 68, 0.2); }
+            50% { background-color: rgba(239, 68, 68, 0.45); }
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden antialiased selection:bg-indigo-500 selection:text-white">
+
+    <header class="glass-panel sticky top-0 z-30 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16 gap-4">
+                
+                <!-- Logo & Brand -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <i class="fa-solid fa-book-bookmark text-white text-lg"></i>
+                    </div>
+                    <div>
+                        <span class="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-indigo-300 bg-clip-text text-transparent">LinguaSQLite</span>
+                        <span class="hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ml-2">v2.0 WebDB</span>
+                    </div>
+                </div>
+
+                <!-- Global Search Input -->
+                <div class="flex-1 max-w-md mx-2">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input id="globalSearchInput" type="text" oninput="handleGlobalSearch()" placeholder="Hikaye veya kelime ara..." class="w-full pl-10 pr-4 py-2 bg-slate-900/80 border border-slate-700/70 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-slate-200 placeholder-slate-500">
+                    </div>
+                </div>
+
+                <!-- Database Import/Export & Controls -->
+                <div class="flex items-center gap-2">
+                    <button onclick="exportDatabase()" title="SQLite Veritabanını İndir (.sqlite)" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-medium text-slate-200 transition-all flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-download text-indigo-400"></i>
+                        <span class="hidden md:inline">SQL İndir</span>
+                    </button>
+
+                    <label title="SQLite Veritabanı Yükle (.sqlite / .db)" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-medium text-slate-200 transition-all cursor-pointer flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-upload text-emerald-400"></i>
+                        <span class="hidden md:inline">SQL Yükle</span>
+                        <input type="file" id="dbFileInput" accept=".sqlite,.db" class="hidden" onchange="importDatabase(event)">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Tab Navigation Bar -->
+            <div class="flex border-t border-slate-800/80 overflow-x-auto no-scrollbar">
+                <button id="tabBtnStories" onclick="switchTab('stories')" class="px-5 py-3 border-b-2 border-indigo-500 text-indigo-400 font-semibold text-sm flex items-center gap-2 transition-all whitespace-nowrap">
+                    <i class="fa-solid fa-book-open"></i> Hikayeler
+                </button>
+                <button id="tabBtnVocabulary" onclick="switchTab('vocabulary')" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-medium text-sm flex items-center gap-2 transition-all whitespace-nowrap">
+                    <i class="fa-solid fa-layer-group"></i> Kelime Defteri (<span id="vocabBadgeCount">0</span>)
+                </button>
+                <button id="tabBtnNewStory" onclick="openStoryModal()" class="px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-emerald-400 font-medium text-sm flex items-center gap-2 transition-all whitespace-nowrap ml-auto">
+                    <i class="fa-solid fa-plus-circle text-emerald-400"></i> Yeni Hikaye Ekle
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 custom-scrollbar overflow-y-auto">
+
+        <!-- PAGE 1: STORIES TAB -->
+        <section id="pageStories" class="space-y-6">
+            
+            <!-- Controls Bar for Voice & Audio Settings -->
+            <div class="glass-panel p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400">
+                        <i class="fa-solid fa-venus text-base"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Seslendirmen Yapılandırması</h4>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-slate-200">Kadın Sesi Telaffuz Motoru</span>
+                            <span id="voiceStatusBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Hazırlanıyor</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <i class="fa-solid fa-sliders text-xs text-slate-400"></i>
+                        <label for="voiceSelect" class="text-xs text-slate-400">Ses:</label>
+                        <select id="voiceSelect" class="bg-transparent text-xs font-medium text-slate-200 focus:outline-none cursor-pointer max-w-[180px] truncate">
+                            <option value="">Kadın Ses Seçiniz...</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <i class="fa-solid fa-gauge-high text-xs text-slate-400"></i>
+                        <label for="speechRate" class="text-xs text-slate-400">Hız:</label>
+                        <input type="range" id="speechRate" min="0.5" max="1.5" step="0.1" value="0.9" class="w-20 accent-indigo-500 cursor-pointer" onchange="updateRateDisplay(this.value)">
+                        <span id="rateValue" class="text-xs font-mono text-indigo-400 w-8">0.9x</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stories Grid & Reading Area Split -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- Stories List Panel -->
+                <div class="lg:col-span-4 space-y-3">
+                    <div class="flex items-center justify-between px-1">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                            <i class="fa-solid fa-list-ul text-indigo-400"></i> Hikaye Listesi
+                        </h3>
+                        <span id="storyCountBadge" class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400">0 Hikaye</span>
+                    </div>
+                    
+                    <div id="storyListContainer" class="space-y-2.5 max-h-[calc(100vh-280px)] overflow-y-auto custom-scrollbar pr-1">
+                        <!-- Dynamic Story Cards will be inserted here -->
+                    </div>
+                </div>
+
+                <!-- Story Reader View Panel -->
+                <div class="lg:col-span-8">
+                    <div id="readerPanel" class="glass-panel rounded-2xl p-6 sm:p-8 min-h-[500px] flex flex-col justify-between relative overflow-hidden">
+                        
+                        <!-- Welcome / Empty State -->
+                        <div id="readerEmptyState" class="my-auto text-center py-12 space-y-4">
+                            <div class="w-20 h-20 mx-auto rounded-3xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-3xl shadow-inner">
+                                <i class="fa-solid fa-book-open-reader"></i>
+                            </div>
+                            <div class="max-w-sm mx-auto">
+                                <h3 class="text-lg font-bold text-slate-200">Okumaya Başlamak İçin Hikaye Seçin</h3>
+                                <p class="text-xs text-slate-400 mt-1">Sol taraftaki listeden bir hikaye seçin veya yeni bir İngilizce hikaye ekleyin. Kelimelerin üzerine gelerek telaffuz ve anlamlarına göz atabilirsiniz.</p>
+                            </div>
+                        </div>
+
+                        <!-- Active Story Reader Content -->
+                        <div id="readerContent" class="hidden space-y-6">
+                            
+                            <!-- Story Header Controls -->
+                            <div class="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span id="readerLevelBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">B1 Intermediate</span>
+                                        <span id="readerWordCount" class="text-xs text-slate-500">0 Kelime</span>
+                                    </div>
+                                    <h2 id="readerTitle" class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">--</h2>
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <button id="btnPlaySpeech" onclick="togglePlayStory()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all">
+                                        <i class="fa-solid fa-play" id="playIcon"></i>
+                                        <span id="playBtnText">Sesli Oku</span>
+                                    </button>
+
+                                    <!-- Telaffuz & Mikrofonla Okuma Butonu -->
+                                    <button id="btnMicPractice" onclick="toggleMicPractice()" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-all">
+                                        <i class="fa-solid fa-microphone" id="micIcon"></i>
+                                        <span id="micBtnText">Telaffuz Pratiği Yap</span>
+                                    </button>
+
+                                    <button onclick="stopSpeech()" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs transition-all border border-slate-700" title="Durdur">
+                                        <i class="fa-solid fa-stop"></i>
+                                    </button>
+                                    <button id="btnEditCurrentStory" onclick="editCurrentStory()" class="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl text-xs transition-all border border-slate-700" title="Hikayeyi Düzenle">
+                                        <i class="fa-solid fa-pen"></i>
+                                    </button>
+                                    <button id="btnDeleteCurrentStory" onclick="deleteCurrentStory()" class="p-2 bg-slate-800 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded-xl text-xs transition-all border border-slate-700" title="Hikayeyi Sil">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="micStatusBanner" class="hidden p-3 rounded-xl bg-slate-900/90 border border-rose-500/30 flex items-center justify-between text-xs transition-all">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="relative flex h-3 w-3">
+                                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                      <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                                    </span>
+                                    <span id="micStatusText" class="font-medium text-slate-200">Mikrofon dinleniyor... İngilizce okumaya başlayın.</span>
+                                </div>
+                                <div id="accuracyBadge" class="font-bold text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
+                                    Skor: --
+                                </div>
+                            </div>
+
+                            <!-- Interactive Words Reader Body -->
+                            <div id="readerBody" class="text-base sm:text-lg leading-relaxed text-slate-200 tracking-wide font-normal selection:bg-indigo-500/30 space-y-4">
+                                <!-- Interactive tokens injected via JS -->
+                            </div>
+
+                            <!-- Reader Footer Note -->
+                            <div class="pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-500">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-info text-indigo-400"></i> Kelimelerin üzerine tıklayarak veya gelerek Türkçe karşılıklarını ve okunuşlarını kart üzerinden görebilirsiniz.
+                                </span>
+                                <div class="flex items-center gap-3">
+                                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Öğrendim</span>
+                                    <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Öğreniyorum</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- PAGE 2: VOCABULARY TAB -->
+        <section id="pageVocabulary" class="hidden space-y-6">
+            <div class="glass-panel p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-book text-emerald-400"></i> Öğrenilen & Takip Edilen Kelimeler
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1">Hikayeleri okurken kart üzerinden kaydettiğiniz veya doğrudan eklediğiniz kelimeler burada listelenir.</p>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button onclick="openAddVocabModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all">
+                        <i class="fa-solid fa-plus"></i> Manuel Kelime Ekle
+                    </button>
+                    <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                        <button onclick="filterVocabTab('all')" id="vocabFilterAll" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium">Tümü</button>
+                        <button onclick="filterVocabTab('ogrendim')" id="vocabFilterLearned" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200">Öğrendim</button>
+                        <button onclick="filterVocabTab('devam')" id="vocabFilterProgress" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200">Devam Edecekler</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Vocabulary Table / Cards Container -->
+            <div id="vocabListContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Dynamic Vocabulary Cards injected via JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- WORD HOVER / CLICK CARD POPOVER -->
+    <div id="wordPopover" class="fixed z-50 hidden w-80 glass-panel bg-slate-900/95 border border-indigo-500/30 rounded-2xl shadow-2xl p-4 transition-all duration-200 backdrop-blur-xl">
+        <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+                <span id="popoverWord" class="text-lg font-extrabold text-white">Word</span>
+                <button onclick="speakWord(popoverCurrentWord)" class="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-all text-xs" title="Telaffuzu Dinle">
+                    <i class="fa-solid fa-volume-high"></i>
+                </button>
+            </div>
+            <button onclick="closePopover()" class="text-slate-500 hover:text-slate-300 text-xs p-1">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <div>
+                <label class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Okunuş / Phonetic</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="popoverPronunciation" placeholder="ör. /ˈjɜːr.ni/" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-indigo-300 font-mono focus:outline-none focus:border-indigo-500">
+                </div>
+            </div>
+
+            <div>
+                <label class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Türkçe Karşılığı</label>
+                <input type="text" id="popoverTranslation" placeholder="Türkçe anlamı yazın..." class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <div class="pt-1 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 flex-1">
+                    <button id="btnStatusDevam" onclick="setPopoverStatus('devam')" class="flex-1 text-[11px] py-1 rounded font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 transition-all">Devam</button>
+                    <button id="btnStatusOgrendim" onclick="setPopoverStatus('ogrendim')" class="flex-1 text-[11px] py-1 rounded font-medium text-slate-400 hover:text-emerald-400 transition-all">Öğrendim</button>
+                </div>
+                <button onclick="savePopoverWord()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md transition-all">
+                    Kaydet
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- STORY MODAL (ADD / EDIT) -->
+    <div id="storyModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+                <h3 id="storyModalTitle" class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Yeni Hikaye Ekle
+                </h3>
+                <button onclick="closeStoryModal()" class="text-slate-400 hover:text-white text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="storyForm" onsubmit="handleStorySubmit(event)" class="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                <input type="hidden" id="storyFormId" value="">
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Hikaye Başlığı</label>
+                        <input type="text" id="storyFormTitle" required placeholder="Ör: The Mysterious Lighthouse" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 mb-1">Seviye</label>
+                        <select id="storyFormLevel" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                            <option value="A1 Beginner">A1 Beginner</option>
+                            <option value="A2 Elementary">A2 Elementary</option>
+                            <option value="B1 Intermediate" selected>B1 Intermediate</option>
+                            <option value="B2 Upper-Int">B2 Upper-Int</option>
+                            <option value="C1 Advanced">C1 Advanced</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">İngilizce Metin İçeriği</label>
+                    <textarea id="storyFormContent" rows="10" required placeholder="İngilizce hikaye metnini buraya yapıştırın veya yazın..." class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 leading-relaxed font-sans custom-scrollbar"></textarea>
+                </div>
+
+                <div class="pt-2 flex items-center justify-end gap-3">
+                    <button type="button" onclick="closeStoryModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30 transition-all">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MANUEL VOCAB MODAL -->
+    <div id="vocabModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-plus text-emerald-400"></i> Kelime Ekle / Düzenle
+                </h3>
+                <button onclick="closeVocabModal()" class="text-slate-400 hover:text-white text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="vocabForm" onsubmit="handleVocabSubmit(event)" class="space-y-4">
+                <input type="hidden" id="vocabFormId" value="">
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">İngilizce Kelime</label>
+                    <input type="text" id="vocabFormWord" required placeholder="ör. Journey" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Okunuş / Telaffuz (IPA)</label>
+                    <input type="text" id="vocabFormPronunciation" placeholder="ör. /ˈjɜːr.ni/" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-indigo-300 font-mono focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Türkçe Karşılığı</label>
+                    <input type="text" id="vocabFormTranslation" required placeholder="ör. Yolculuk, Seyahat" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Durum</label>
+                    <select id="vocabFormStatus" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500 cursor-pointer">
+                        <option value="devam">Devam Ediyor (Öğreniyorum)</option>
+                        <option value="ogrendim">Öğrendim ✨</option>
+                    </select>
+                </div>
+
+                <div class="pt-2 flex items-center justify-end gap-3">
+                    <button type="button" onclick="closeVocabModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all">İptal</button>
+                    <button type="submit" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-emerald-600/30 transition-all">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let db = null;
+        let SQL = null;
+        let activeStoryId = null;
+        let currentVocabFilter = 'all';
+        let popoverCurrentWord = '';
+        let popoverCurrentStatus = 'devam';
+        let femaleVoices = [];
+        let synth = window.speechSynthesis;
+        let activeUtterance = null;
+        let isSpeaking = false;
+
+        let recognition = null;
+        let isListening = false;
+        let recognizedWordsMap = {};
+
+        // Offline Built-in Dictionary Fallback for common story words
+        const defaultDictionary = {
+            "whispering": { tr: "fısıldayan", pr: "/ˈwɪs.pər.ɪŋ/" },
+            "ancient": { tr: "kadim, çok eski", pr: "/ˈeɪn.ʃənt/" },
+            "forest": { tr: "orman", pr: "/ˈfɔːr.ɪst/" },
+            "mysterious": { tr: "gizemli", pr: "/mɪˈstɪr.i.əs/" },
+            "journey": { tr: "yolculuk", pr: "/ˈjɜːr.ni/" },
+            "discovered": { tr: "keşfetti", pr: "/dɪˈskʌv.ərd/" },
+            "hidden": { tr: "gizli, saklı", pr: "/ˈhɪd.ən/" },
+            "path": { tr: "patika, yol", pr: "/pæθ/" },
+            "light": { tr: "ışık", pr: "/laɪt/" },
+            "shadows": { tr: "gölgeler", pr: "/ˈʃæd.oʊz/" },
+            "silence": { tr: "sessizlik", pr: "/ˈsaɪ.ləns/" },
+            "adventure": { tr: "macera", pr: "/ədˈven.tʃər/" },
+            "village": { tr: "köy", pr: "/ˈvɪl.ɪdʒ/" },
+            "curious": { tr: "meraklı", pr: "/ˈkjʊr.i.əs/" },
+            "explorer": { tr: "kaşif", pr: "/ɪkˈsplɔːr.ər/" },
+            "magic": { tr: "sihir, büyü", pr: "/ˈmædʒ.ɪk/" },
+            "courage": { tr: "cesaret", pr: "/ˈkɜːr.ɪdʒ/" },
+            "bright": { tr: "parlak", pr: "/braɪt/" },
+            "stars": { tr: "yıldızlar", pr: "/stɑːrz/" }
+        };
+
+        window.onload = async function() {
+            try {
+                // Initialize sql.js WebAssembly
+                SQL = await initSqlJs({
+                    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                });
+
+                // Create fresh SQLite Database in memory
+                db = new SQL.Database();
+                initDatabaseSchema();
+                seedInitialData();
+                
+                // Initialize Speech Synthesis Voices
+                initVoices();
+                if (speechSynthesis.onvoiceschanged !== undefined) {
+                    speechSynthesis.onvoiceschanged = initVoices;
+                }
+
+                initSpeechRecognition();
+
+                // Render initial view
+                renderStoryList();
+                renderVocabularyList();
+
+                // Setup popover document click handler
+                document.addEventListener('click', function(e) {
+                    const pop = document.getElementById('wordPopover');
+                    if (pop && !pop.contains(e.target) && !e.target.classList.contains('word-token')) {
+                        closePopover();
+                    }
+                });
+
+            } catch (err) {
+                console.error("Database initialization failed:", err);
+            }
+        };
+
+        function initDatabaseSchema() {
+            if (!db) return;
+            db.run(`
+                CREATE TABLE IF NOT EXISTS stories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            db.run(`
+                CREATE TABLE IF NOT EXISTS vocabulary (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    word TEXT UNIQUE NOT NULL,
+                    translation TEXT,
+                    pronunciation TEXT,
+                    status TEXT DEFAULT 'devam',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
+
+        function seedInitialData() {
+            if (!db) return;
+            
+            const storyCheck = db.exec("SELECT COUNT(*) FROM stories");
+            const storyCount = storyCheck.length > 0 ? storyCheck[0].values[0][0] : 0;
+
+            if (storyCount === 0) {
+                const initialStories = [
+                    {
+                        title: "The Whispering Forest",
+                        level: "B1 Intermediate",
+                        content: "Once upon a time, in a small quiet village near the mountain, there was a whispering forest. The local people believed that the ancient trees could talk in the wind. A young curious explorer named Lily decided to enter the forest on a bright sunny morning. She discovered a hidden path covered with soft green moss and bright wild flowers. As she walked deeper, the silence became peaceful and full of magic. She found an old wooden box under a giant oak tree, containing a silver key that promised a new adventure."
+                    },
+                    {
+                        title: "The Journey to the Stars",
+                        level: "A2 Elementary",
+                        content: "Leo loved to look at the night sky. Every evening, he sat near his window and observed the bright stars with his telescope. His dream was to build a rocket and visit distant planets. One evening, he saw a glowing light fall into his garden. It was a small friendly star that had lost its way home. Leo gathered his courage and helped the star find its path back into the night sky, making a friend forever."
+                    }
+                ];
+
+                const stmt = db.prepare("INSERT INTO stories (title, level, content) VALUES (?, ?, ?)");
+                initialStories.forEach(s => stmt.run([s.title, s.level, s.content]));
+                stmt.free();
+            }
+
+            const vocabCheck = db.exec("SELECT COUNT(*) FROM vocabulary");
+            const vocabCount = vocabCheck.length > 0 ? vocabCheck[0].values[0][0] : 0;
+
+            if (vocabCount === 0) {
+                const initialVocab = [
+                    { word: "whispering", tr: "fısıldayan", pr: "/ˈwɪs.pər.ɪŋ/", status: "devam" },
+                    { word: "ancient", tr: "kadim, çok eski", pr: "/ˈeɪn.ʃənt/", status: "ogrendim" },
+                    { word: "explorer", tr: "kaşif, gezgin", pr: "/ɪkˈsplɔːr.ər/", status: "devam" },
+                    { word: "courage", tr: "cesaret", pr: "/ˈkɜːr.ɪdʒ/", status: "ogrendim" }
+                ];
+
+                const stmtVocab = db.prepare("INSERT INTO vocabulary (word, translation, pronunciation, status) VALUES (?, ?, ?, ?)");
+                initialVocab.forEach(v => stmtVocab.run([v.word, v.tr, v.pr, v.status]));
+                stmtVocab.free();
+            }
+        }
+
+        function initVoices() {
+            if (!synth) return;
+            const voices = synth.getVoices();
+            const voiceSelect = document.getElementById('voiceSelect');
+            if (!voiceSelect) return;
+
+            voiceSelect.innerHTML = '<option value="">Kadın Ses Seçiniz...</option>';
+            
+            femaleVoices = voices.filter(v => v.lang.startsWith('en'));
+
+            femaleVoices.sort((a, b) => {
+                const aFemale = /female|zira|samantha|karen|victoria|fiona|susan|hazel|heather|aria|jenny/i.test(a.name);
+                const bFemale = /female|zira|samantha|karen|victoria|fiona|susan|hazel|heather|aria|jenny/i.test(b.name);
+                return bFemale - aFemale;
+            });
+
+            femaleVoices.forEach((voice, idx) => {
+                const option = document.createElement('option');
+                option.value = idx;
+                const isFemale = /female|zira|samantha|karen|victoria|fiona|susan|hazel|heather|aria|jenny/i.test(voice.name);
+                option.textContent = `${voice.name} (${voice.lang}) ${isFemale ? '👩' : ''}`;
+                if (idx === 0) option.selected = true;
+                voiceSelect.appendChild(option);
+            });
+
+            const badge = document.getElementById('voiceStatusBadge');
+            if (badge) {
+                if (femaleVoices.length > 0) {
+                    badge.textContent = `${femaleVoices.length} Ses Hazır`;
+                    badge.className = "text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                } else {
+                    badge.textContent = "Varsayılan Ses";
+                    badge.className = "text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                }
+            }
+        }
+
+        function updateRateDisplay(val) {
+            const rateVal = document.getElementById('rateValue');
+            if (rateVal) rateVal.textContent = `${val}x`;
+        }
+
+        function togglePlayStory() {
+            if (isSpeaking) {
+                stopSpeech();
+                return;
+            }
+
+            if (!activeStoryId) return;
+            const story = getStoryById(activeStoryId);
+            if (!story) return;
+
+            if (isListening) stopMicPractice();
+
+            synth.cancel();
+
+            activeUtterance = new SpeechSynthesisUtterance(story.content);
+            
+            const select = document.getElementById('voiceSelect');
+            const selectedIdx = select.value;
+            if (selectedIdx !== '' && femaleVoices[selectedIdx]) {
+                activeUtterance.voice = femaleVoices[selectedIdx];
+            }
+            activeUtterance.lang = 'en-US';
+
+            const rateInput = document.getElementById('speechRate');
+            if (rateInput) activeUtterance.rate = parseFloat(rateInput.value) || 0.9;
+
+            const playBtnText = document.getElementById('playBtnText');
+            const playIcon = document.getElementById('playIcon');
+
+            activeUtterance.onstart = function() {
+                isSpeaking = true;
+                if (playBtnText) playBtnText.textContent = "Duraklat";
+                if (playIcon) playIcon.className = "fa-solid fa-pause";
+            };
+
+            activeUtterance.onend = function() {
+                stopSpeech();
+            };
+
+            activeUtterance.onerror = function() {
+                stopSpeech();
+            };
+
+            synth.speak(activeUtterance);
+        }
+
+        function speakWord(word) {
+            if (!word || !synth) return;
+            synth.cancel();
+            const u = new SpeechSynthesisUtterance(word);
+            u.lang = 'en-US';
+            
+            const select = document.getElementById('voiceSelect');
+            const selectedIdx = select.value;
+            if (selectedIdx !== '' && femaleVoices[selectedIdx]) {
+                u.voice = femaleVoices[selectedIdx];
+            }
+            synth.speak(u);
+        }
+
+        function stopSpeech() {
+            if (synth) synth.cancel();
+            isSpeaking = false;
+            const playBtnText = document.getElementById('playBtnText');
+            const playIcon = document.getElementById('playIcon');
+            if (playBtnText) playBtnText.textContent = "Sesli Oku";
+            if (playIcon) playIcon.className = "fa-solid fa-play";
+        }
+
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.warn("Web Speech Recognition bu tarayıcıda desteklenmiyor.");
+                const btn = document.getElementById('btnMicPractice');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-50', 'cursor-not-allowed');
+                    btn.title = "Tarayıcınız Konuşma Tanıma özelliğini desteklemiyor (Chrome/Edge önerilir).";
+                }
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = function(event) {
+                let spokenTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    spokenTranscript += event.results[i][0].transcript + ' ';
+                }
+                evaluatePronunciation(spokenTranscript);
+            };
+
+            recognition.onerror = function(event) {
+                console.error("Konuşma tanıma hatası:", event.error);
+                if (event.error === 'not-allowed') {
+                    showToast("Mikrofon izni reddedildi. Lütfen tarayıcı izinlerini kontrol edin.");
+                }
+                stopMicPractice();
+            };
+
+            recognition.onend = function() {
+                if (isListening) {
+                    try { recognition.start(); } catch(e) {}
+                } else {
+                    stopMicPractice();
+                }
+            };
+        }
+
+        function toggleMicPractice() {
+            if (!recognition) {
+                showToast("Tarayıcınız konuşma tanıma özelliğini desteklemiyor.");
+                return;
+            }
+
+            if (isSpeaking) stopSpeech();
+
+            if (isListening) {
+                stopMicPractice();
+            } else {
+                startMicPractice();
+            }
+        }
+
+        function startMicPractice() {
+            if (!recognition) return;
+            isListening = true;
+            recognizedWordsMap = {};
+
+            const btnText = document.getElementById('micBtnText');
+            const micIcon = document.getElementById('micIcon');
+            const banner = document.getElementById('micStatusBanner');
+
+            if (btnText) btnText.textContent = "Pratiği Durdur";
+            if (micIcon) micIcon.className = "fa-solid fa-microphone-slash text-rose-300";
+            if (banner) banner.classList.remove('hidden');
+
+            resetSpeechHighlights();
+
+            try {
+                recognition.start();
+            } catch(e) {
+                console.warn("Recognition start error:", e);
+            }
+        }
+
+        function stopMicPractice() {
+            isListening = false;
+            if (recognition) {
+                try { recognition.stop(); } catch(e) {}
+            }
+
+            const btnText = document.getElementById('micBtnText');
+            const micIcon = document.getElementById('micIcon');
+            const banner = document.getElementById('micStatusBanner');
+
+            if (btnText) btnText.textContent = "Telaffuz Pratiği Yap";
+            if (micIcon) micIcon.className = "fa-solid fa-microphone";
+            if (banner) banner.classList.add('hidden');
+        }
+
+        function resetSpeechHighlights() {
+            const tokens = document.querySelectorAll('#readerBody .word-token');
+            tokens.forEach(token => {
+                token.classList.remove('word-correct', 'word-wrong');
+            });
+        }
+
+        function evaluatePronunciation(spokenText) {
+            const cleanSpokenWords = spokenText
+                .toLowerCase()
+                .replace(/[^a-z0-9\s']/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 0);
+
+            const tokenElements = document.querySelectorAll('#readerBody .word-token');
+            let totalWords = 0;
+            let correctCount = 0;
+
+            tokenElements.forEach(elem => {
+                const rawWord = elem.getAttribute('data-clean-word');
+                if (!rawWord) return;
+                totalWords++;
+
+                if (cleanSpokenWords.includes(rawWord)) {
+                    elem.classList.remove('word-wrong');
+                    elem.classList.add('word-correct');
+                    correctCount++;
+                } else if (cleanSpokenWords.length > 0) {
+                    elem.classList.remove('word-correct');
+                    elem.classList.add('word-wrong');
+                }
+            });
+
+            if (totalWords > 0 && cleanSpokenWords.length > 0) {
+                const percentage = Math.round((correctCount / totalWords) * 100);
+                const badge = document.getElementById('accuracyBadge');
+                if (badge) {
+                    badge.textContent = `Telaffuz Doğruluğu: %${percentage}`;
+                    if (percentage >= 80) {
+                        badge.className = "font-bold text-xs px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                    } else if (percentage >= 50) {
+                        badge.className = "font-bold text-xs px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                    } else {
+                        badge.className = "font-bold text-xs px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30";
+                    }
+                }
+            }
+        }
+
+        function renderStoryList(searchQuery = '') {
+            const container = document.getElementById('storyListContainer');
+            if (!container) return;
+            container.innerHTML = '';
+
+            let sql = "SELECT id, title, level, content FROM stories";
+            let params = [];
+
+            if (searchQuery.trim() !== '') {
+                sql += " WHERE title LIKE ? OR content LIKE ?";
+                const q = `%${searchQuery.trim()}%`;
+                params.push(q, q);
+            }
+
+            sql += " ORDER BY id DESC";
+
+            const res = db.exec(sql, params);
+            let count = 0;
+
+            if (res.length > 0) {
+                const rows = res[0].values;
+                count = rows.length;
+
+                rows.forEach(row => {
+                    const [id, title, level, content] = row;
+                    const wordCount = content.trim().split(/\s+/).length;
+                    const isSelected = activeStoryId === id;
+
+                    const card = document.createElement('div');
+                    card.className = `p-4 rounded-xl cursor-pointer transition-all border ${
+                        isSelected 
+                            ? 'bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/10' 
+                            : 'glass-panel hover:border-slate-700 bg-slate-900/60'
+                    }`;
+
+                    card.onclick = () => selectStory(id);
+
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded ${
+                                level.startsWith('A') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                level.startsWith('B') ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' :
+                                'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }">${escapeHtml(level)}</span>
+                            <span class="text-[11px] text-slate-500 font-medium"><i class="fa-regular fa-file-word text-slate-400 mr-1"></i>${wordCount} kelime</span>
+                        </div>
+                        <h4 class="text-sm font-bold text-white line-clamp-1">${escapeHtml(title)}</h4>
+                        <p class="text-xs text-slate-400 line-clamp-2 mt-1 leading-relaxed">${escapeHtml(content)}</p>
+                    `;
+
+                    container.appendChild(card);
+                });
+            } else {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-slate-500 text-xs">
+                        <i class="fa-solid fa-folder-open text-2xl mb-2 text-slate-600 block"></i>
+                        Hikaye bulunamadı.
+                    </div>
+                `;
+            }
+
+            document.getElementById('storyCountBadge').textContent = `${count} Hikaye`;
+
+            if (!activeStoryId && count > 0) {
+                const firstId = res[0].values[0][0];
+                selectStory(firstId);
+            }
+        }
+
+        function selectStory(id) {
+            activeStoryId = id;
+            const story = getStoryById(id);
+            if (!story) return;
+
+            renderStoryList(document.getElementById('globalSearchInput')?.value || '');
+
+            document.getElementById('readerTitle').textContent = story.title;
+            document.getElementById('readerLevelBadge').textContent = story.level;
+            
+            const wordCount = story.content.trim().split(/\s+/).length;
+            document.getElementById('readerWordCount').textContent = `${wordCount} Kelime`;
+
+            document.getElementById('readerEmptyState').classList.add('hidden');
+            document.getElementById('readerContent').classList.remove('hidden');
+
+            renderInteractiveStoryText(story.content);
+        }
+
+        function getStoryById(id) {
+            if (!db) return null;
+            const res = db.exec("SELECT id, title, level, content FROM stories WHERE id = ?", [id]);
+            if (res.length > 0 && res[0].values.length > 0) {
+                const row = res[0].values[0];
+                return {
+                    id: row[0],
+                    title: row[1],
+                    level: row[2],
+                    content: row[3]
+                };
+            }
+            return null;
+        }
+
+        function renderInteractiveStoryText(text) {
+            stopMicPractice();
+            const readerBody = document.getElementById('readerBody');
+            readerBody.innerHTML = '';
+
+            const vocabMap = getVocabMapFromDB();
+            const paragraphs = text.split('\n');
+            
+            paragraphs.forEach(paraText => {
+                if (paraText.trim() === '') return;
+
+                const pElem = document.createElement('p');
+                pElem.className = 'leading-relaxed tracking-wide';
+
+                const tokens = paraText.match(/[\w']+|[^\w\s]+|\s+/g) || [];
+
+                tokens.forEach(token => {
+                    const cleanWord = token.toLowerCase().replace(/[^a-z']/g, '');
+
+                    if (cleanWord.length > 0) {
+                        const span = document.createElement('span');
+                        span.textContent = token;
+                        span.className = 'word-token';
+                        span.setAttribute('data-clean-word', cleanWord);
+
+                        const dbVocab = vocabMap[cleanWord];
+                        if (dbVocab) {
+                            if (dbVocab.status === 'ogrendim') {
+                                span.classList.add('word-learned');
+                            } else if (dbVocab.status === 'devam') {
+                                span.classList.add('word-learning');
+                            }
+                        }
+
+                        span.onmouseenter = (e) => showWordPopover(e, cleanWord);
+                        span.onclick = (e) => {
+                            e.stopPropagation();
+                            showWordPopover(e, cleanWord, true);
+                        };
+
+                        pElem.appendChild(span);
+                    } else {
+                        pElem.appendChild(document.createTextNode(token));
+                    }
+                });
+
+                readerBody.appendChild(pElem);
+            });
+        }
+
+        function getVocabMapFromDB() {
+            const map = {};
+            if (!db) return map;
+            const res = db.exec("SELECT word, translation, pronunciation, status FROM vocabulary");
+            if (res.length > 0) {
+                res[0].values.forEach(row => {
+                    map[row[0].toLowerCase()] = {
+                        translation: row[1],
+                        pronunciation: row[2],
+                        status: row[3]
+                    };
+                });
+            }
+            return map;
+        }
+
+        function showWordPopover(event, word, isClick = false) {
+            popoverCurrentWord = word;
+            const popover = document.getElementById('wordPopover');
+            document.getElementById('popoverWord').textContent = word;
+
+            const vocabMap = getVocabMapFromDB();
+            const existing = vocabMap[word] || defaultDictionary[word] || { translation: '', pronunciation: '', status: 'devam' };
+
+            document.getElementById('popoverTranslation').value = existing.translation || (existing.tr || '');
+            document.getElementById('popoverPronunciation').value = existing.pronunciation || (existing.pr || '');
+            setPopoverStatus(existing.status || 'devam');
+
+            const rect = event.target.getBoundingClientRect();
+            let top = rect.bottom + window.scrollY + 8;
+            let left = rect.left + window.scrollX - 40;
+
+            if (left + 320 > window.innerWidth) {
+                left = window.innerWidth - 330;
+            }
+            if (left < 10) left = 10;
+
+            popover.style.top = `${top}px`;
+            popover.style.left = `${left}px`;
+            popover.classList.remove('hidden');
+        }
+
+        function setPopoverStatus(status) {
+            popoverCurrentStatus = status;
+            const btnDevam = document.getElementById('btnStatusDevam');
+            const btnOgrendim = document.getElementById('btnStatusOgrendim');
+
+            if (status === 'ogrendim') {
+                btnOgrendim.className = "flex-1 text-[11px] py-1 rounded font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 transition-all";
+                btnDevam.className = "flex-1 text-[11px] py-1 rounded font-medium text-slate-400 hover:text-amber-400 transition-all";
+            } else {
+                btnDevam.className = "flex-1 text-[11px] py-1 rounded font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 transition-all";
+                btnOgrendim.className = "flex-1 text-[11px] py-1 rounded font-medium text-slate-400 hover:text-emerald-400 transition-all";
+            }
+        }
+
+        function closePopover() {
+            document.getElementById('wordPopover').classList.add('hidden');
+        }
+
+        function savePopoverWord() {
+            const word = popoverCurrentWord.trim().toLowerCase();
+            const translation = document.getElementById('popoverTranslation').value.trim();
+            const pronunciation = document.getElementById('popoverPronunciation').value.trim();
+            const status = popoverCurrentStatus;
+
+            if (!word) return;
+
+            const stmt = db.prepare(`
+                INSERT INTO vocabulary (word, translation, pronunciation, status)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(word) DO UPDATE SET
+                    translation=excluded.translation,
+                    pronunciation=excluded.pronunciation,
+                    status=excluded.status
+            `);
+
+            stmt.run([word, translation, pronunciation, status]);
+            stmt.free();
+
+            closePopover();
+
+            if (activeStoryId) {
+                const story = getStoryById(activeStoryId);
+                if (story) renderInteractiveStoryText(story.content);
+            }
+            renderVocabularyList();
+        }
+
+        function renderVocabularyList() {
+            const container = document.getElementById('vocabListContainer');
+            if (!container) return;
+            container.innerHTML = '';
+
+            let query = "SELECT id, word, translation, pronunciation, status FROM vocabulary";
+            let params = [];
+
+            if (currentVocabFilter !== 'all') {
+                query += " WHERE status = ?";
+                params.push(currentVocabFilter);
+            }
+
+            query += " ORDER BY id DESC";
+
+            const res = db.exec(query, params);
+            let count = 0;
+
+            if (res.length > 0) {
+                const rows = res[0].values;
+                count = rows.length;
+
+                rows.forEach(row => {
+                    const [id, word, translation, pronunciation, status] = row;
+                    const isLearned = status === 'ogrendim';
+
+                    const card = document.createElement('div');
+                    card.className = `glass-panel p-4 rounded-xl border transition-all flex flex-col justify-between space-y-3 ${
+                        isLearned ? 'border-emerald-500/20 hover:border-emerald-500/40' : 'border-amber-500/20 hover:border-amber-500/40'
+                    }`;
+
+                    card.innerHTML = `
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="text-base font-bold text-white">${escapeHtml(word)}</h4>
+                                    <button onclick="speakWord('${escapeJsString(word)}')" class="text-indigo-400 hover:text-indigo-300 text-xs p-1" title="Telaffuz Dinle">
+                                        <i class="fa-solid fa-volume-high"></i>
+                                    </button>
+                                </div>
+                                <span class="text-xs text-indigo-300 font-mono">${escapeHtml(pronunciation || '')}</span>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded ${
+                                isLearned ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            }">
+                                ${isLearned ? 'Öğrendim ✨' : 'Devam Ediyor'}
+                            </span>
+                        </div>
+
+                        <div>
+                            <p class="text-xs text-slate-300 font-medium">${escapeHtml(translation || 'Çeviri belirtilmedi')}</p>
+                        </div>
+
+                        <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                            <button onclick="toggleVocabStatusInList(${id}, '${status}')" class="text-xs text-slate-400 hover:text-slate-200 transition-all flex items-center gap-1">
+                                <i class="fa-solid ${isLearned ? 'fa-rotate-left text-amber-400' : 'fa-circle-check text-emerald-400'}"></i>
+                                ${isLearned ? 'Devam Et olarak değiştir' : 'Öğrendim olarak işaretle'}
+                            </button>
+                            <div class="flex items-center gap-1">
+                                <button onclick="editVocab(${id})" class="p-1.5 text-slate-400 hover:text-amber-400 text-xs rounded-lg hover:bg-slate-800">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button onclick="deleteVocab(${id})" class="p-1.5 text-slate-400 hover:text-red-400 text-xs rounded-lg hover:bg-slate-800">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    container.appendChild(card);
+                });
+            }
+
+            const totalRes = db.exec("SELECT COUNT(*) FROM vocabulary");
+            const totalVocabs = totalRes.length > 0 ? totalRes[0].values[0][0] : 0;
+            const badgeCount = document.getElementById('vocabBadgeCount');
+            if (badgeCount) badgeCount.textContent = totalVocabs;
+        }
+
+        function filterVocabTab(status) {
+            currentVocabFilter = status;
+            
+            document.getElementById('vocabFilterAll').className = status === 'all' ? "px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium" : "px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200";
+            document.getElementById('vocabFilterLearned').className = status === 'ogrendim' ? "px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium" : "px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200";
+            document.getElementById('vocabFilterProgress').className = status === 'devam' ? "px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-medium" : "px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200";
+
+            renderVocabularyList();
+        }
+
+        function toggleVocabStatusInList(id, currentStatus) {
+            const newStatus = currentStatus === 'ogrendim' ? 'devam' : 'ogrendim';
+            db.run("UPDATE vocabulary SET status = ? WHERE id = ?", [newStatus, id]);
+            renderVocabularyList();
+            if (activeStoryId) {
+                const story = getStoryById(activeStoryId);
+                if (story) renderInteractiveStoryText(story.content);
+            }
+        }
+
+        function deleteVocab(id) {
+            db.run("DELETE FROM vocabulary WHERE id = ?", [id]);
+            renderVocabularyList();
+            if (activeStoryId) {
+                const story = getStoryById(activeStoryId);
+                if (story) renderInteractiveStoryText(story.content);
+            }
+        }
+
+        function openStoryModal(story = null) {
+            const modal = document.getElementById('storyModal');
+            document.getElementById('storyFormId').value = story ? story.id : '';
+            document.getElementById('storyFormTitle').value = story ? story.title : '';
+            document.getElementById('storyFormLevel').value = story ? story.level : 'B1 Intermediate';
+            document.getElementById('storyFormContent').value = story ? story.content : '';
+            document.getElementById('storyModalTitle').innerHTML = story 
+                ? '<i class="fa-solid fa-pen-to-square text-indigo-400"></i> Hikaye Düzenle'
+                : '<i class="fa-solid fa-plus-circle text-emerald-400"></i> Yeni Hikaye Ekle';
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeStoryModal() {
+            document.getElementById('storyModal').classList.add('hidden');
+        }
+
+        function handleStorySubmit(event) {
+            event.preventDefault();
+            const id = document.getElementById('storyFormId').value;
+            const title = document.getElementById('storyFormTitle').value.trim();
+            const level = document.getElementById('storyFormLevel').value;
+            const content = document.getElementById('storyFormContent').value.trim();
+
+            if (!title || !content) return;
+
+            if (id) {
+                db.run("UPDATE stories SET title = ?, level = ?, content = ? WHERE id = ?", [title, level, content, id]);
+                activeStoryId = parseInt(id);
+            } else {
+                db.run("INSERT INTO stories (title, level, content) VALUES (?, ?, ?)", [title, level, content]);
+                const lastIdRes = db.exec("SELECT last_insert_rowid()");
+                if (lastIdRes.length > 0) {
+                    activeStoryId = lastIdRes[0].values[0][0];
+                }
+            }
+
+            closeStoryModal();
+            renderStoryList();
+            if (activeStoryId) selectStory(activeStoryId);
+        }
+
+        function editCurrentStory() {
+            if (!activeStoryId) return;
+            const story = getStoryById(activeStoryId);
+            if (story) openStoryModal(story);
+        }
+
+        function deleteCurrentStory() {
+            if (!activeStoryId) return;
+            db.run("DELETE FROM stories WHERE id = ?", [activeStoryId]);
+            activeStoryId = null;
+            renderStoryList();
+
+            const res = db.exec("SELECT id FROM stories ORDER BY id DESC LIMIT 1");
+            if (res.length > 0 && res[0].values.length > 0) {
+                selectStory(res[0].values[0][0]);
+            } else {
+                document.getElementById('readerContent').classList.add('hidden');
+                document.getElementById('readerEmptyState').classList.remove('hidden');
+            }
+        }
+
+        function openAddVocabModal(vocab = null) {
+            const modal = document.getElementById('vocabModal');
+            document.getElementById('vocabFormId').value = vocab ? vocab.id : '';
+            document.getElementById('vocabFormWord').value = vocab ? vocab.word : '';
+            document.getElementById('vocabFormPronunciation').value = vocab ? vocab.pronunciation : '';
+            document.getElementById('vocabFormTranslation').value = vocab ? vocab.translation : '';
+            document.getElementById('vocabFormStatus').value = vocab ? vocab.status : 'devam';
+
+            modal.classList.remove('hidden');
+        }
+
+        function closeVocabModal() {
+            document.getElementById('vocabModal').classList.add('hidden');
+        }
+
+        function editVocab(id) {
+            const res = db.exec("SELECT id, word, translation, pronunciation, status FROM vocabulary WHERE id = ?", [id]);
+            if (res.length > 0 && res[0].values.length > 0) {
+                const row = res[0].values[0];
+                openAddVocabModal({
+                    id: row[0],
+                    word: row[1],
+                    translation: row[2],
+                    pronunciation: row[3],
+                    status: row[4]
+                });
+            }
+        }
+
+        function handleVocabSubmit(event) {
+            event.preventDefault();
+            const id = document.getElementById('vocabFormId').value;
+            const word = document.getElementById('vocabFormWord').value.trim().toLowerCase();
+            const pronunciation = document.getElementById('vocabFormPronunciation').value.trim();
+            const translation = document.getElementById('vocabFormTranslation').value.trim();
+            const status = document.getElementById('vocabFormStatus').value;
+
+            if (!word || !translation) return;
+
+            if (id) {
+                db.run("UPDATE vocabulary SET word=?, translation=?, pronunciation=?, status=? WHERE id=?", [word, translation, pronunciation, status, id]);
+            } else {
+                db.run("INSERT OR REPLACE INTO vocabulary (word, translation, pronunciation, status) VALUES (?, ?, ?, ?)", [word, translation, pronunciation, status]);
+            }
+
+            closeVocabModal();
+            renderVocabularyList();
+            if (activeStoryId) {
+                const story = getStoryById(activeStoryId);
+                if (story) renderInteractiveStoryText(story.content);
+            }
+        }
+
+        function exportDatabase() {
+            if (!db) return;
+            const data = db.export();
+            const blob = new Blob([data], { type: 'application/x-sqlite3' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lingua_english_learning_${new Date().toISOString().slice(0,10)}.sqlite`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function importDatabase(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    const Uints = new Uint8Array(reader.result);
+                    db = new SQL.Database(Uints);
+                    activeStoryId = null;
+                    renderStoryList();
+                    renderVocabularyList();
+                    showToast("SQLite Veritabanı başarıyla yüklendi!");
+                } catch (err) {
+                    alert("Veritabanı yüklenirken bir hata oluştu. Geçerli bir .sqlite veya .db dosyası seçtiğinizden emin olun.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleGlobalSearch() {
+            const query = document.getElementById('globalSearchInput').value;
+            renderStoryList(query);
+        }
+
+        function switchTab(tab) {
+            const pageStories = document.getElementById('pageStories');
+            const pageVocabulary = document.getElementById('pageVocabulary');
+            const tabBtnStories = document.getElementById('tabBtnStories');
+            const tabBtnVocabulary = document.getElementById('tabBtnVocabulary');
+
+            if (tab === 'stories') {
+                pageStories.classList.remove('hidden');
+                pageVocabulary.classList.add('hidden');
+                tabBtnStories.className = "px-5 py-3 border-b-2 border-indigo-500 text-indigo-400 font-semibold text-sm flex items-center gap-2 transition-all whitespace-nowrap";
+                tabBtnVocabulary.className = "px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-medium text-sm flex items-center gap-2 transition-all whitespace-nowrap";
+            } else {
+                pageStories.classList.add('hidden');
+                pageVocabulary.classList.remove('hidden');
+                tabBtnVocabulary.className = "px-5 py-3 border-b-2 border-indigo-500 text-indigo-400 font-semibold text-sm flex items-center gap-2 transition-all whitespace-nowrap";
+                tabBtnStories.className = "px-5 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 font-medium text-sm flex items-center gap-2 transition-all whitespace-nowrap";
+                renderVocabularyList();
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function escapeJsString(str) {
+            if (!str) return '';
+            return str.replace(/'/g, "\\'");
+        }
+
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = "fixed bottom-5 right-5 z-50 bg-emerald-600 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 animate-bounce";
+            toast.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${message}`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

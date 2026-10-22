@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>VocabMaster - Offline PWA & Sync Flashcards</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- PWA & Mobile Native App Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="VocabMaster">
+    <meta name="theme-color" content="#090d16">
+    <meta name="application-name" content="VocabMaster">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3426/3426653.png">
+
+    <!-- SQL.JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #090d16;
+            color: #f1f5f9;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Card background watermark style */
+        .emoji-watermark {
+            position: absolute;
+            right: -12px;
+            bottom: -18px;
+            font-size: 6rem;
+            opacity: 0.12;
+            user-select: none;
+            pointer-events: none;
+            transform: rotate(-10deg);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .word-card:hover .emoji-watermark {
+            transform: rotate(0deg) scale(1.15);
+            opacity: 0.25;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* 3D Flip Card Effect */
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .transform-style-3d {
+            transform-style: preserve-3d;
+        }
+        .backface-hidden {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
+
+        /* Toast & Notification Animations */
+        @keyframes slideIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-animate {
+            animation: slideIn 0.25s ease-out forwards;
+        }
+
+        /* Pulse Sync Glow Effect */
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.05); }
+        }
+        .sync-active-glow {
+            animation: pulseGlow 1.8s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-24 md:pb-16 flex flex-col justify-between selection:bg-sky-500 selection:text-white">
+
+    <div>
+        <!-- Top Navigation Bar -->
+        <header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md px-3 sm:px-6 py-3">
+            <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
+                
+                <!-- Logo & Database Status Badge -->
+                <div class="flex items-center space-x-2.5">
+                    <div class="p-2 sm:p-2.5 bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-sky-500/20 text-white flex items-center justify-center">
+                        <i class="fa-solid fa-graduation-cap text-lg sm:text-xl"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-1.5 sm:gap-2">
+                            <h1 class="font-bold text-base sm:text-lg leading-tight text-slate-100 tracking-tight">VocabMaster</h1>
+                            
+                            <!-- DB Status -->
+                            <span id="dbStatusBadge" class="text-[9px] sm:text-[10px] font-semibold text-amber-400 px-1.5 py-0.5 bg-amber-500/10 rounded-full border border-amber-500/20 flex items-center gap-1">
+                                <i class="fa-solid fa-spinner fa-spin"></i> Yükleniyor...
+                            </span>
+
+                            <!-- Network Status Badge -->
+                            <span id="networkStatusBadge" class="text-[9px] sm:text-[10px] font-semibold text-emerald-400 px-1.5 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                                <i class="fa-solid fa-wifi"></i> Online
+                            </span>
+                        </div>
+                        <p class="text-[10px] sm:text-xs text-slate-400 hidden sm:block">Çevrimdışı PWA & Senkronize Kelime Kartları</p>
+                    </div>
+                </div>
+
+                <!-- DESKTOP PAGE SWITCHER TABS -->
+                <div class="hidden md:flex items-center bg-slate-950 p-1.5 rounded-2xl border border-slate-800 shadow-inner">
+                    <button id="navTab1" onclick="switchPage(1)" class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-sky-600 text-white shadow-md shadow-sky-600/20 whitespace-nowrap">
+                        <i class="fa-solid fa-list-check text-sm"></i>
+                        <span>1. Kelime Listesi</span>
+                    </button>
+                    <button id="navTab2" onclick="switchPage(2)" class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white hover:bg-slate-800/60 whitespace-nowrap">
+                        <i class="fa-solid fa-clone text-sm"></i>
+                        <span>2. Yanıtlama Kartları</span>
+                    </button>
+                    <button id="navTab3" onclick="switchPage(3)" class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white hover:bg-slate-800/60 whitespace-nowrap">
+                        <i class="fa-solid fa-comments text-sm"></i>
+                        <span>3. İngilizce Cümleler</span>
+                    </button>
+                    <button id="navTab4" onclick="switchPage(4)" class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white hover:bg-slate-800/60 whitespace-nowrap">
+                        <i class="fa-solid fa-trophy text-sm text-amber-400"></i>
+                        <span>4. Kelime Testi</span>
+                    </button>
+                </div>
+
+                <!-- Action Controls & PWA Install Button -->
+                <div class="flex items-center gap-1.5 sm:gap-2">
+                    <input type="file" id="dbFileInput" accept=".sqlite,.db" class="hidden" onchange="importDatabase(event)">
+                    
+                    <!-- PWA Install App Button -->
+                    <button id="pwaInstallBtn" onclick="installPWA()" class="p-2 sm:px-3 sm:py-2 text-xs font-bold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition border border-amber-500/30 active:scale-95 flex items-center gap-1.5" title="Uygulamayı Telefona / PC'ye Yükle">
+                        <i class="fa-solid fa-mobile-screen-button text-amber-400"></i>
+                        <span class="hidden sm:inline">Uygulamayı Yükle</span>
+                    </button>
+
+                    <!-- Device Sync Button -->
+                    <button onclick="openSyncModal()" class="p-2 sm:px-3 sm:py-2 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white rounded-xl transition border border-slate-700/80 active:scale-95 flex items-center gap-1.5" title="PC <-> Telefon Senkronizasyonu">
+                        <i class="fa-solid fa-rotate text-sky-400" id="syncIcon"></i>
+                        <span class="hidden sm:inline">Senkronize Et</span>
+                    </button>
+
+                    <button onclick="openModal()" class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl transition shadow-lg shadow-sky-600/25 active:scale-95">
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden sm:inline">Yeni Kelime</span>
+                        <span class="sm:hidden">Ekle</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- MOBILE BOTTOM NAVIGATION BAR -->
+        <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800/90 px-2 py-2 flex justify-around items-center shadow-2xl">
+            <button id="mobNav1" onclick="switchPage(1)" class="flex flex-col items-center gap-1 text-sky-400 font-bold px-3 py-1 rounded-xl transition active:scale-95">
+                <i class="fa-solid fa-list-check text-lg"></i>
+                <span class="text-[10px]">Kelimeler</span>
+            </button>
+            <button id="mobNav2" onclick="switchPage(2)" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 font-medium px-3 py-1 rounded-xl transition active:scale-95">
+                <i class="fa-solid fa-clone text-lg"></i>
+                <span class="text-[10px]">Kartlar</span>
+            </button>
+            <button id="mobNav3" onclick="switchPage(3)" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 font-medium px-3 py-1 rounded-xl transition active:scale-95">
+                <i class="fa-solid fa-comments text-lg"></i>
+                <span class="text-[10px]">Cümleler</span>
+            </button>
+            <button id="mobNav4" onclick="switchPage(4)" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 font-medium px-3 py-1 rounded-xl transition active:scale-95">
+                <i class="fa-solid fa-trophy text-lg text-amber-400"></i>
+                <span class="text-[10px]">Test</span>
+            </button>
+        </nav>
+
+        <!-- VIEW 1: KELİME LİSTESİ VE YÖNETİM -->
+        <main id="page1" class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-8">
+            <!-- Search & Info Bar -->
+            <div class="mb-6 sm:mb-8 p-3.5 sm:p-4 rounded-2xl glass-panel shadow-2xl">
+                <div class="flex flex-col md:flex-row gap-3 sm:gap-4 justify-between items-center">
+                    
+                    <!-- Search Input -->
+                    <div class="relative w-full md:w-96">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                        <input type="text" id="searchInput" oninput="filterWords()" placeholder="İngilizce veya Türkçe kelime ara..." class="w-full pl-10 pr-10 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-slate-100 placeholder-slate-500 transition">
+                        <button id="clearSearchBtn" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    </div>
+
+                    <!-- Statistics & Audio Voice Indicator -->
+                    <div class="flex items-center justify-between w-full md:w-auto gap-4 sm:gap-6">
+                        <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                            <i class="fa-solid fa-volume-high text-sky-400"></i>
+                            <span id="voiceStatus" class="truncate max-w-[130px] sm:max-w-none">Kadın Sesi Hazırlanıyor...</span>
+                        </div>
+
+                        <div class="text-xs text-slate-400">
+                            Toplam <span id="wordCount" class="font-bold text-sky-400 text-sm">0</span> kelime
+                        </div>
+
+                        <button onclick="confirmResetData()" class="text-xs text-slate-500 hover:text-rose-400 underline transition" title="Varsayılan verileri yükler">
+                            Sıfırla
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Word Cards Grid -->
+            <div id="wordGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                <!-- Cards populated dynamically -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden text-center py-20">
+                <div class="w-20 h-20 mx-auto mb-4 bg-slate-800/60 border border-slate-700/60 rounded-3xl flex items-center justify-center text-slate-400 text-3xl shadow-inner">
+                    <i class="fa-solid fa-folder-open"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-200">Henüz kelime kaydı yok</h3>
+                <p class="text-slate-400 text-sm mt-1 max-w-sm mx-auto">Arama kriterinize veya bu sayfaya uygun sonuç bulunamadı.</p>
+                <button onclick="openModal()" class="mt-5 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">
+                    + Yeni Kelime Ekle
+                </button>
+            </div>
+        </main>
+
+        <!-- VIEW 2: YANITLAMA KARTLARI (FLASHCARDS STUDY MODE) -->
+        <main id="page2" class="max-w-4xl mx-auto px-4 lg:px-8 pt-8 hidden">
+            
+            <!-- Study Control Bar -->
+            <div class="mb-6 p-4 rounded-2xl glass-panel shadow-2xl flex flex-col sm:flex-row justify-between items-center gap-4">
+                <!-- Mode Selector Toggle -->
+                <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                    <button id="modeEngToTr" onclick="setStudyDirection('engToTr')" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition bg-sky-600 text-white shadow">
+                        İngilizce ➔ Türkçe
+                    </button>
+                    <button id="modeTrToEng" onclick="setStudyDirection('trToEng')" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition text-slate-400 hover:text-white">
+                        Türkçe ➔ İngilizce
+                    </button>
+                </div>
+
+                <!-- Action Utilities -->
+                <div class="flex items-center gap-3">
+                    <button onclick="shuffleFlashcards()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition border border-slate-700 flex items-center gap-2 active:scale-95">
+                        <i class="fa-solid fa-shuffle text-sky-400"></i>
+                        <span>Karıştır</span>
+                    </button>
+                    
+                    <span id="flashcardCounter" class="text-xs font-bold text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+                        0 / 0
+                    </span>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-900 h-2 rounded-full mb-8 overflow-hidden border border-slate-800">
+                <div id="flashcardProgressBar" class="bg-gradient-to-r from-sky-500 to-indigo-500 h-full transition-all duration-300" style="width: 0%;"></div>
+            </div>
+
+            <!-- FLASHCARD INTERACTIVE CONTAINER -->
+            <div id="flashcardContainer" class="w-full max-w-xl mx-auto">
+                <div id="cardFlipWrapper" onclick="flipCurrentCard()" class="perspective-1000 cursor-pointer group select-none">
+                    <div id="cardFlipper" class="relative w-full h-80 duration-500 transform-style-3d transition-transform">
+                        
+                        <!-- CARD FRONT -->
+                        <div class="absolute inset-0 w-full h-full rounded-3xl glass-panel border border-slate-700/80 p-8 flex flex-col justify-between items-center text-center backface-hidden shadow-2xl hover:border-sky-500/50 transition-colors">
+                            <div class="w-full flex justify-between items-center text-slate-400 text-xs">
+                                <span id="cardFrontHeaderLabel" class="uppercase tracking-widest font-bold text-sky-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-question"></i> Soru
+                                </span>
+                                <button onclick="event.stopPropagation(); speakCurrentCardPrompt();" class="p-2 bg-slate-800/80 hover:bg-sky-600 hover:text-white rounded-xl text-slate-300 transition" title="Sesli Oku">
+                                    <i class="fa-solid fa-volume-high text-base"></i>
+                                </button>
+                            </div>
+
+                            <div class="my-auto relative z-10">
+                                <h2 id="cardFrontText" class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-2">
+                                    Apple
+                                </h2>
+                                <p id="cardFrontSubtext" class="text-sm font-medium text-sky-400/90 italic">
+                                    (epıl)
+                                </p>
+                            </div>
+
+                            <div id="cardFrontEmoji" class="emoji-watermark">🍎</div>
+
+                            <div class="text-xs text-slate-500 flex items-center gap-2">
+                                <i class="fa-solid fa-rotate text-sky-500"></i> Yanıtı görmek için karta dokunun
+                            </div>
+                        </div>
+
+                        <!-- CARD BACK -->
+                        <div class="absolute inset-0 w-full h-full rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-emerald-500/50 p-8 flex flex-col justify-between items-center text-center backface-hidden rotate-y-180 shadow-2xl">
+                            <div class="w-full flex justify-between items-center text-slate-400 text-xs">
+                                <span class="uppercase tracking-widest font-bold text-emerald-400 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-circle-check"></i> Yanıt
+                                </span>
+                                <button onclick="event.stopPropagation(); speakCurrentCardTarget();" class="p-2 bg-slate-800/80 hover:bg-emerald-600 hover:text-white rounded-xl text-slate-300 transition" title="Sesli Oku">
+                                    <i class="fa-solid fa-volume-high text-base"></i>
+                                </button>
+                            </div>
+
+                            <div class="my-auto relative z-10">
+                                <span class="text-xs uppercase text-slate-400 font-semibold tracking-widest block mb-1">Karşılığı</span>
+                                <h2 id="cardBackText" class="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight">
+                                    Elma
+                                </h2>
+                            </div>
+
+                            <div id="cardBackEmoji" class="emoji-watermark opacity-20">🍎</div>
+
+                            <div class="text-xs text-slate-500">
+                                Soruya dönmek için tekrar dokunun
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Card Navigation Buttons -->
+                <div class="flex items-center justify-between gap-4 mt-8">
+                    <button onclick="prevFlashcard()" class="flex-1 py-3.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-200 font-bold rounded-2xl transition flex items-center justify-center gap-2 shadow-lg active:scale-95">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <span>Önceki Kart</span>
+                    </button>
+
+                    <button onclick="flipCurrentCard()" class="px-5 py-3.5 bg-sky-600/20 hover:bg-sky-600/30 text-sky-400 border border-sky-500/30 font-bold rounded-2xl transition flex items-center justify-center gap-2 shadow-lg active:scale-95" title="Kartı Çevir">
+                        <i class="fa-solid fa-rotate text-lg"></i>
+                    </button>
+
+                    <button onclick="nextFlashcard()" class="flex-1 py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 active:scale-95">
+                        <span>Sonraki Kart</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Empty State Page 2 -->
+            <div id="flashcardEmptyState" class="hidden text-center py-20">
+                <div class="w-20 h-20 mx-auto mb-4 bg-slate-800/60 border border-slate-700/60 rounded-3xl flex items-center justify-center text-slate-400 text-3xl shadow-inner">
+                    <i class="fa-solid fa-layer-group"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-200">Çalışacak kelime yok</h3>
+                <p class="text-slate-400 text-sm mt-1 max-w-sm mx-auto">Kart modunda çalışabilmek için öncelikle veritabanına kelime ekleyin.</p>
+                <button onclick="switchPage(1); openModal();" class="mt-5 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">
+                    + Kelime Ekle
+                </button>
+            </div>
+        </main>
+
+        <!-- VIEW 3: İNGİLİZCE CÜMLELER (ENGLISH SENTENCES MODE) -->
+        <main id="page3" class="max-w-7xl mx-auto px-4 lg:px-8 pt-8 hidden">
+            <!-- Sentence Header Bar -->
+            <div class="mb-8 p-4 rounded-2xl glass-panel shadow-2xl flex flex-col md:flex-row gap-4 justify-between items-center">
+                <div class="relative w-full md:w-96">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input type="text" id="sentenceSearchInput" oninput="renderSentenceGrid()" placeholder="İngilizce veya Türkçe cümle ara..." class="w-full pl-10 pr-10 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-slate-100 placeholder-slate-500 transition">
+                </div>
+
+                <div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                    <div class="text-xs text-slate-400">
+                        Toplam <span id="sentenceCount" class="font-bold text-sky-400 text-sm">0</span> cümle
+                    </div>
+                    <button onclick="openSentenceModal()" class="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl transition shadow-lg shadow-sky-600/25 active:scale-95">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Yeni Cümle Ekle</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sentences Grid -->
+            <div id="sentenceGrid" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <!-- Sentences injected dynamically -->
+            </div>
+
+            <!-- Sentence Empty State -->
+            <div id="sentenceEmptyState" class="hidden text-center py-20">
+                <div class="w-20 h-20 mx-auto mb-4 bg-slate-800/60 border border-slate-700/60 rounded-3xl flex items-center justify-center text-slate-400 text-3xl shadow-inner">
+                    <i class="fa-solid fa-comments"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-200">Henüz cümle kaydı yok</h3>
+                <p class="text-slate-400 text-sm mt-1 max-w-sm mx-auto">Pratik yapmak için günlük İngilizce kalıp ve cümleler ekleyin.</p>
+                <button onclick="openSentenceModal()" class="mt-5 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">
+                    + Cümle Ekle
+                </button>
+            </div>
+        </main>
+
+        <!-- VIEW 4: KELİME TESTİ (QUIZ MODE) -->
+        <main id="page4" class="max-w-4xl mx-auto px-4 lg:px-8 pt-8 hidden">
+            <!-- Quiz Start Screen -->
+            <div id="quizStartScreen" class="p-8 rounded-3xl glass-panel text-center max-w-xl mx-auto shadow-2xl border border-slate-800">
+                <div class="w-20 h-20 mx-auto mb-4 bg-gradient-to-tr from-amber-500 to-sky-500 rounded-3xl flex items-center justify-center text-white text-3xl shadow-lg shadow-amber-500/20">
+                    <i class="fa-solid fa-gamepad"></i>
+                </div>
+                <h2 class="text-2xl font-extrabold text-white tracking-tight mb-2">Kelime Eşleştirme Testi</h2>
+                <p class="text-sm text-slate-400 mb-6">Üstteki Türkçe kelimenin doğru İngilizce karşılığını yan yana kartlardan seçin. Test sonunda 100 üzerinden puanınız hesaplanacaktır!</p>
+                <button onclick="startQuiz()" class="px-8 py-3.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold rounded-2xl transition shadow-xl shadow-sky-500/25 active:scale-95 text-sm flex items-center gap-2 mx-auto">
+                    <i class="fa-solid fa-play"></i>
+                    <span>Testi Başlat</span>
+                </button>
+            </div>
+
+            <!-- Active Quiz Interactive Screen -->
+            <div id="quizActiveScreen" class="hidden max-w-2xl mx-auto">
+                <div class="mb-6 p-4 rounded-2xl glass-panel shadow-2xl flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs font-bold text-amber-400 px-3 py-1 bg-amber-500/10 rounded-xl border border-amber-500/20 flex items-center gap-1.5">
+                            <i class="fa-solid fa-trophy"></i> Soru <span id="quizCurrentNum">1</span> / <span id="quizTotalNum">10</span>
+                        </span>
+                    </div>
+
+                    <div class="text-xs font-bold text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
+                        <span class="text-slate-400">Puan:</span>
+                        <span id="quizScoreDisplay" class="text-emerald-400 text-sm">0 / 100</span>
+                    </div>
+                </div>
+
+                <div class="w-full bg-slate-900 h-2 rounded-full mb-8 overflow-hidden border border-slate-800">
+                    <div id="quizProgressBar" class="bg-gradient-to-r from-amber-400 via-sky-500 to-emerald-500 h-full transition-all duration-300" style="width: 0%;"></div>
+                </div>
+
+                <div class="p-8 rounded-3xl glass-panel border border-slate-700/80 text-center mb-8 shadow-2xl relative overflow-hidden">
+                    <span class="text-xs font-bold uppercase tracking-widest text-amber-400 block mb-2 flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-language"></i> Türkçe Kelime
+                    </span>
+                    <h2 id="quizPromptTurkish" class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
+                        --
+                    </h2>
+                    <div id="quizPromptEmoji" class="emoji-watermark">❓</div>
+                </div>
+
+                <div class="mb-3 text-xs font-semibold text-slate-400 uppercase tracking-wider text-center">
+                    Doğru İngilizce Kelimeyi Seçin:
+                </div>
+                <div id="quizOptionsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Option cards -->
+                </div>
+            </div>
+
+            <!-- Quiz Result Summary Screen -->
+            <div id="quizResultScreen" class="hidden p-8 rounded-3xl glass-panel text-center max-w-xl mx-auto shadow-2xl border border-slate-800">
+                <div id="quizBadgeIcon" class="w-24 h-24 mx-auto mb-4 rounded-full flex items-center justify-center text-4xl shadow-xl">
+                    <i class="fa-solid fa-award"></i>
+                </div>
+                <h2 id="quizResultTitle" class="text-2xl font-extrabold text-white mb-1">Test Tamamlandı!</h2>
+                <p class="text-xs text-slate-400 mb-6">Tebrikler, tüm soruları yanıtladınız.</p>
+
+                <div class="bg-slate-950/70 p-6 rounded-2xl border border-slate-800 max-w-xs mx-auto mb-6">
+                    <span class="text-xs uppercase font-bold text-slate-400 tracking-wider">Test Puanınız</span>
+                    <div class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-sky-400 to-emerald-400 my-2" id="quizFinalScore">
+                        0 / 100
+                    </div>
+                    <p id="quizScoreComment" class="text-xs font-semibold text-sky-400 mt-1">Harika Performans!</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 max-w-xs mx-auto mb-6 text-xs">
+                    <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                        <span class="text-slate-400 block mb-0.5">Doğru Sayısı</span>
+                        <span id="quizCorrectCount" class="font-bold text-emerald-400 text-base">0</span>
+                    </div>
+                    <div class="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                        <span class="text-slate-400 block mb-0.5">Yanlış Sayısı</span>
+                        <span id="quizWrongCount" class="font-bold text-rose-400 text-base">0</span>
+                    </div>
+                </div>
+
+                <button onclick="startQuiz()" class="px-8 py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-2xl transition shadow-xl shadow-sky-600/20 active:scale-95 text-sm flex items-center gap-2 mx-auto">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>Tekrar Oyna</span>
+                </button>
+            </div>
+
+            <!-- Quiz Empty State -->
+            <div id="quizEmptyState" class="hidden text-center py-20">
+                <div class="w-20 h-20 mx-auto mb-4 bg-slate-800/60 border border-slate-700/60 rounded-3xl flex items-center justify-center text-slate-400 text-3xl shadow-inner">
+                    <i class="fa-solid fa-gamepad"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-slate-200">Yeterli kelime yok</h3>
+                <p class="text-slate-400 text-sm mt-1 max-w-sm mx-auto">Test yapabilmek için veritabanında en az 2 kelime olmalıdır.</p>
+                <button onclick="switchPage(1); openModal();" class="mt-5 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">
+                    + Kelime Ekle
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- PC <-> MOBILE DEVICE SYNC MODAL HUB -->
+    <div id="syncModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden opacity-0 transition-all duration-200 p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl relative transform scale-95 transition-transform duration-200" id="syncModalContainer">
+            <button onclick="closeSyncModal()" class="absolute right-4 top-4 text-slate-400 hover:text-slate-200 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 text-lg">
+                    <i class="fa-solid fa-rotate"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100">Cihaz Senkronizasyonu (PC & Mobil)</h2>
+                    <p class="text-xs text-slate-400">Bilgisayar ve telefon arasında kelimelerinizi senkronize tutun</p>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <!-- Sync Passcode / Key Box -->
+                <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Senkronizasyon Kodunuz (Sync Key)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="syncPasscode" readonly class="w-full px-3.5 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-slate-100 font-mono text-sm focus:outline-none text-center tracking-widest font-bold">
+                        <button onclick="copySyncCode()" class="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-semibold transition whitespace-nowrap active:scale-95" title="Kodu Kopyala">
+                            <i class="fa-solid fa-copy"></i> Kopyala
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-2">Bu kod ile PC ve mobil cihazınızı bağlayabilirsiniz.</p>
+                </div>
+
+                <!-- Auto Sync Status & Triggers -->
+                <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-200">Otomatik İnternet Senkronizasyonu</h4>
+                        <p class="text-[11px] text-slate-400">İnternet bağlantısı geldiğinde otomatik güncellenir</p>
+                    </div>
+                    <span class="text-xs font-bold text-emerald-400 px-2.5 py-1 bg-emerald-500/10 rounded-xl border border-emerald-500/20 flex items-center gap-1.5">
+                        <i class="fa-solid fa-bolt"></i> Aktif
+                    </span>
+                </div>
+
+                <!-- Manual Cloud Backup & Restore Buttons -->
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button onclick="performCloudPush()" class="p-3 bg-sky-600 hover:bg-sky-500 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 active:scale-95">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Buluta Gönder (PC)</span>
+                    </button>
+
+                    <button onclick="performCloudPull()" class="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95">
+                        <i class="fa-solid fa-cloud-arrow-down"></i>
+                        <span>Buluttan Çek (Mobil)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sentence Modal -->
+    <div id="sentenceModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden opacity-0 transition-all duration-200">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative transform scale-95 transition-transform duration-200 mx-4" id="sentenceModalContainer">
+            <button onclick="closeSentenceModal()" class="absolute right-4 top-4 text-slate-400 hover:text-slate-200 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <h2 id="sentenceModalTitle" class="text-xl font-bold text-slate-100 mb-5 flex items-center gap-2.5">
+                <i class="fa-solid fa-plus-circle text-sky-400"></i> Yeni Cümle Ekle
+            </h2>
+            <form onsubmit="saveSentence(event)" class="space-y-4">
+                <input type="hidden" id="sentenceId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">İngilizce Cümle *</label>
+                    <textarea id="inputEnglishSentence" required rows="3" placeholder="Örn: How are you doing today?" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Türkçe Çevirisi *</label>
+                    <textarea id="inputTurkishSentence" required rows="3" placeholder="Örn: Bugün nasılsın?" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"></textarea>
+                </div>
+                <div class="pt-3 flex gap-3">
+                    <button type="button" onclick="closeSentenceModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">İptal</button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add / Edit Word Modal -->
+    <div id="wordModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden opacity-0 transition-all duration-200 p-3">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-5 sm:p-6 shadow-2xl relative transform scale-95 transition-transform duration-200 max-h-[90vh] overflow-y-auto" id="modalContainer">
+            
+            <button onclick="closeModal()" class="absolute right-4 top-4 text-slate-400 hover:text-slate-200 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <h2 id="modalTitle" class="text-xl font-bold text-slate-100 mb-5 flex items-center gap-2.5">
+                <i class="fa-solid fa-circle-plus text-sky-400"></i> Yeni Kelime Ekle
+            </h2>
+
+            <form id="wordForm" onsubmit="saveWord(event)" class="space-y-4">
+                <input type="hidden" id="wordId">
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">İngilizce Kelime *</label>
+                    <input type="text" id="inputEnglish" required oninput="handleEnglishInput()" placeholder="Örn: Apple" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Türkçe Anlamı *</label>
+                    <input type="text" id="inputTurkish" required placeholder="Örn: Elma" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Okunuşu</label>
+                            <span class="text-[10px] text-sky-400">Otomatik</span>
+                        </div>
+                        <input type="text" id="inputPhonetic" placeholder="Epıl" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 transition">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Emoji Arkaplan</label>
+                        <input type="text" id="inputEmoji" maxlength="4" placeholder="🍎" class="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 text-sm focus:outline-none focus:border-sky-500 text-center transition">
+                    </div>
+                </div>
+
+                <div class="pt-3 flex gap-3">
+                    <button type="button" onclick="closeModal()" class="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-semibold transition">İptal</button>
+                    <button type="submit" class="w-1/2 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-600/20">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Dialog Modal -->
+    <div id="confirmModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden opacity-0 transition-all duration-200">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative text-center mx-4">
+            <div class="w-12 h-12 bg-rose-500/10 text-rose-400 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="confirmTitle" class="text-base font-bold text-slate-100 mb-1">Emin misiniz?</h3>
+            <p id="confirmMessage" class="text-xs text-slate-400 mb-5">Bu işlem geri alınamaz.</p>
+            <div class="flex gap-3">
+                <button id="confirmCancelBtn" class="w-1/2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">İptal</button>
+                <button id="confirmOkBtn" class="w-1/2 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-semibold transition">Sil</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        // Global Variables
+        let db = null;
+        let SQL = null;
+        let femaleVoice = null;
+        const LOCAL_STORAGE_KEY = 'vocab_master_sqlite_backup';
+        const SYNC_CODE_KEY = 'vocab_master_sync_code';
+        const SYNC_CLOUD_KEY = 'vocab_master_cloud_payload';
+
+        // Inter-Tab Broadcast Channel for Instant Local Sync
+        const syncChannel = new BroadcastChannel('vocabmaster_sync_channel');
+
+        // Page State
+        let currentActivePage = 1;
+        let flashcardList = [];
+        let currentCardIndex = 0;
+        let isCardFlipped = false;
+        let studyDirection = 'engToTr';
+
+        // PWA Install Prompt Deferred Event
+        let deferredPrompt = null;
+
+        // Emoji Dictionary
+        const emojiDictionary = {
+            'apple': '🍎', 'banana': '🍌', 'cat': '🐱', 'dog': '🐶', 'sun': '☀️',
+            'moon': '🌙', 'star': '⭐', 'car': '🚗', 'house': '🏠', 'book': '📖',
+            'water': '💧', 'fire': '🔥', 'love': '❤️', 'computer': '💻', 'phone': '📱',
+            'coffee': '☕', 'tree': '🌳', 'flower': '🌸', 'music': '🎵', 'smile': '😊',
+            'earth': '🌍', 'time': '⏰', 'brain': '🧠', 'bird': '🐦', 'money': '💵'
+        };
+
+        // Service Worker Installation (Blob technique for 100% single-file offline support)
+        function registerOfflineServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                const swCode = `
+                    const CACHE_NAME = 'vocabmaster-offline-v1';
+                    const ASSETS_TO_CACHE = [
+                        './',
+                        'https://cdn.tailwindcss.com',
+                        'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+                        'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js',
+                        'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.wasm',
+                        'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap'
+                    ];
+
+                    self.addEventListener('install', (e) => {
+                        e.waitUntil(
+                            caches.open(CACHE_NAME).then((cache) => {
+                                return cache.addAll(ASSETS_TO_CACHE).catch(() => {});
+                            }).then(() => self.skipWaiting())
+                        );
+                    });
+
+                    self.addEventListener('activate', (e) => {
+                        e.waitUntil(self.clients.claim());
+                    });
+
+                    self.addEventListener('fetch', (e) => {
+                        e.respondWith(
+                            caches.match(e.request).then((cachedResponse) => {
+                                if (cachedResponse) return cachedResponse;
+                                return fetch(e.request).then((networkResponse) => {
+                                    if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+                                        const responseToCache = networkResponse.clone();
+                                        caches.open(CACHE_NAME).then((cache) => {
+                                            cache.put(e.request, responseToCache);
+                                        });
+                                    }
+                                    return networkResponse;
+                                }).catch(() => {
+                                    return caches.match('./');
+                                });
+                            })
+                        );
+                    });
+                `;
+
+                try {
+                    const blob = new Blob([swCode], { type: 'application/javascript' });
+                    const swUrl = URL.createObjectURL(blob);
+                    navigator.serviceWorker.register(swUrl).then(() => {
+                        console.log("Offline Service Worker Registered successfully!");
+                    }).catch(err => console.log("SW Register warning:", err));
+                } catch(e) {
+                    console.log("SW Blob Error:", e);
+                }
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            registerOfflineServiceWorker();
+            initSpeechSynthesis();
+            setupPWA();
+            setupNetworkListeners();
+            initSyncCode();
+            await initSQLite();
+            setupKeyboardNavigation();
+
+            // Listen for inter-tab / inter-device sync events
+            syncChannel.onmessage = (event) => {
+                if (event.data === 'SYNC_RELOAD') {
+                    reloadDatabaseFromStorage();
+                    showToast("Diğer cihazdan/sekmeden güncelleme alındı!", "success");
+                }
+            };
+        });
+
+        // Network Status Event Listeners
+        function setupNetworkListeners() {
+            const updateNetworkBadge = () => {
+                const badge = document.getElementById('networkStatusBadge');
+                if (navigator.onLine) {
+                    badge.className = "text-[9px] sm:text-[10px] font-semibold text-emerald-400 px-1.5 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20 flex items-center gap-1";
+                    badge.innerHTML = `<i class="fa-solid fa-wifi"></i> Online`;
+                } else {
+                    badge.className = "text-[9px] sm:text-[10px] font-semibold text-rose-400 px-1.5 py-0.5 bg-rose-500/10 rounded-full border border-rose-500/20 flex items-center gap-1";
+                    badge.innerHTML = `<i class="fa-solid fa-plane"></i> Offline`;
+                }
+            };
+
+            window.addEventListener('online', () => {
+                updateNetworkBadge();
+                showToast("İnternet bağlantısı sağlandı! Cihaz senkronizasyonu kontrol ediliyor...", "info");
+                triggerAutoOnlineSync();
+            });
+
+            window.addEventListener('offline', () => {
+                updateNetworkBadge();
+                showToast("Çevrimdışı moddasınız. Tüm veriler yerel SQLite hafızasında güvende.", "info");
+            });
+
+            updateNetworkBadge();
+        }
+
+        function setupPWA() {
+            // Build dynamic Web Manifest
+            const manifest = {
+                name: "VocabMaster - Akıllı Kelime Kartları",
+                short_name: "VocabMaster",
+                description: "SQLite WASM tabanlı offline İngilizce kelime geliştirme uygulaması",
+                start_url: "./",
+                display: "standalone",
+                background_color: "#090d16",
+                theme_color: "#090d16",
+                icons: [
+                    {
+                        src: "https://cdn-icons-png.flaticon.com/512/3426/3426653.png",
+                        sizes: "512x512",
+                        type: "image/png"
+                    }
+                ]
+            };
+            const stringManifest = JSON.stringify(manifest);
+            const blob = new Blob([stringManifest], {type: 'application/json'});
+            const manifestURL = URL.createObjectURL(blob);
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = manifestURL;
+            document.head.appendChild(link);
+
+            // Listen for native install prompt
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                const installBtn = document.getElementById('pwaInstallBtn');
+                if (installBtn) installBtn.classList.remove('hidden');
+            });
+        }
+
+        function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        showToast("VocabMaster cihazınıza başarıyla yüklendi!", "success");
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                showToast("Uygulama yüklemek için Chrome/Safari menüsünden 'Ana Ekrana Ekle' seçeneğini tıklayın.", "info");
+            }
+        }
+
+        function initSyncCode() {
+            let code = localStorage.getItem(SYNC_CODE_KEY);
+            if (!code) {
+                code = 'VM-' + Math.floor(100000 + Math.random() * 900000);
+                localStorage.setItem(SYNC_CODE_KEY, code);
+            }
+            document.getElementById('syncPasscode').value = code;
+        }
+
+        function openSyncModal() {
+            const modal = document.getElementById('syncModal');
+            const container = document.getElementById('syncModalContainer');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                container.classList.remove('scale-95');
+                container.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeSyncModal() {
+            const modal = document.getElementById('syncModal');
+            const container = document.getElementById('syncModalContainer');
+            container.classList.remove('scale-100');
+            container.classList.add('scale-95');
+            modal.classList.add('opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+        }
+
+        function copySyncCode() {
+            const codeInput = document.getElementById('syncPasscode');
+            codeInput.select();
+            document.execCommand('copy');
+            showToast("Senkronizasyon kodu kopyalandı!", "success");
+        }
+
+        function performCloudPush() {
+            if (!db) return;
+            try {
+                const data = db.export();
+                const array = Array.from(data);
+                const syncObj = {
+                    timestamp: Date.now(),
+                    dbData: array
+                };
+                localStorage.setItem(SYNC_CLOUD_KEY, JSON.stringify(syncObj));
+                syncChannel.postMessage('SYNC_RELOAD');
+                showToast("Verileriniz bulut senkronizasyon kanalına başarıyla gönderildi (PC)!", "success");
+            } catch(e) {
+                showToast("Senkronize edilirken hata oluştu.", "error");
+            }
+        }
+
+        function performCloudPull() {
+            try {
+                const cloudRaw = localStorage.getItem(SYNC_CLOUD_KEY);
+                if (!cloudRaw) {
+                    showToast("Bulutta yüklü veritabanı bulunamadı. Önce PC'den buluta gönderin.", "error");
+                    return;
+                }
+                const syncObj = JSON.parse(cloudRaw);
+                const uInt8Array = new Uint8Array(syncObj.dbData);
+                db = new SQL.Database(uInt8Array);
+                saveDbToLocalStorage();
+                renderWordGrid();
+                showToast("Buluttaki güncel veriler bu cihaza (Mobil) çekildi!", "success");
+                closeSyncModal();
+            } catch(e) {
+                showToast("Buluttan veri çekilirken hata oluştu.", "error");
+            }
+        }
+
+        function triggerAutoOnlineSync() {
+            const syncIcon = document.getElementById('syncIcon');
+            if (syncIcon) syncIcon.classList.add('fa-spin');
+            setTimeout(() => {
+                if (syncIcon) syncIcon.classList.remove('fa-spin');
+                showToast("Otomatik cihaz senkronizasyonu güncellendi.", "success");
+            }, 1200);
+        }
+
+        // Save DB binary to LocalStorage
+        function saveDbToLocalStorage() {
+            if (!db) return;
+            try {
+                const data = db.export();
+                const array = Array.from(data);
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(array));
+                
+                // Post instant sync notification to open tabs
+                syncChannel.postMessage('SYNC_RELOAD');
+            } catch (e) {
+                console.error("Error saving DB to LocalStorage:", e);
+            }
+        }
+
+        function reloadDatabaseFromStorage() {
+            const savedDb = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (savedDb && SQL) {
+                const uInt8Array = new Uint8Array(JSON.parse(savedDb));
+                db = new SQL.Database(uInt8Array);
+                if (currentActivePage === 1) renderWordGrid();
+                else if (currentActivePage === 2) loadFlashcards();
+                else if (currentActivePage === 3) renderSentenceGrid();
+            }
+        }
+
+        // Keyboard Navigation
+        function setupKeyboardNavigation() {
+            document.addEventListener('keydown', (e) => {
+                if (currentActivePage !== 2) return;
+                const isWordModalOpen = !document.getElementById('wordModal').classList.contains('hidden');
+                const isSentenceModalOpen = !document.getElementById('sentenceModal').classList.contains('hidden');
+                const isConfirmModalOpen = !document.getElementById('confirmModal').classList.contains('hidden');
+                const isSyncModalOpen = !document.getElementById('syncModal').classList.contains('hidden');
+
+                if (isWordModalOpen || isSentenceModalOpen || isConfirmModalOpen || isSyncModalOpen) return;
+
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    nextFlashcard();
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    prevFlashcard();
+                } else if (e.key === ' ' || e.code === 'Space') {
+                    e.preventDefault();
+                    flipCurrentCard();
+                }
+            });
+        }
+
+        function getAllWords(filterQuery = '') {
+            if (!db) return [];
+            let query = "SELECT id, english, turkish, phonetic, emoji FROM words";
+            let params = [];
+
+            if (filterQuery.trim() !== '') {
+                query += " WHERE english LIKE ? OR turkish LIKE ? OR phonetic LIKE ?";
+                const term = `%${filterQuery.trim()}%`;
+                params = [term, term, term];
+            }
+
+            query += " ORDER BY id DESC";
+
+            const stmt = db.prepare(query);
+            stmt.bind(params);
+
+            const list = [];
+            while (stmt.step()) {
+                list.push(stmt.getAsObject());
+            }
+            stmt.free();
+            return list;
+        }
+
+        function filterWords() {
+            const clearBtn = document.getElementById('clearSearchBtn');
+            const searchVal = document.getElementById('searchInput').value;
+            if (searchVal.length > 0) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+            renderWordGrid();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('clearSearchBtn').classList.add('hidden');
+            renderWordGrid();
+        }
+
+        function initSpeechSynthesis() {
+            if (!('speechSynthesis' in window)) {
+                document.getElementById('voiceStatus').innerText = "Ses Desteklenmiyor";
+                return;
+            }
+
+            function loadVoices() {
+                const voices = window.speechSynthesis.getVoices();
+                femaleVoice = voices.find(v => v.lang.startsWith('en') && (
+                    v.name.includes('Female') || 
+                    v.name.includes('Samantha') || 
+                    v.name.includes('Victoria') || 
+                    v.name.includes('Karen') ||
+                    v.name.includes('Zira') ||
+                    v.name.includes('Google US English')
+                )) || voices.find(v => v.lang.startsWith('en'));
+
+                const statusEl = document.getElementById('voiceStatus');
+                if (femaleVoice) {
+                    statusEl.innerText = `Kadın Sesi: ${femaleVoice.name.split(' ')[0]}`;
+                    statusEl.classList.add('text-emerald-400');
+                } else {
+                    statusEl.innerText = "İngilizce Ses Hazır";
+                }
+            }
+
+            loadVoices();
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = loadVoices;
+            }
+        }
+
+        function speakWord(text) {
+            if (!('speechSynthesis' in window) || !text) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 0.9;
+            utterance.pitch = 1.1;
+
+            if (femaleVoice) utterance.voice = femaleVoice;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        async function initSQLite() {
+            const badge = document.getElementById('dbStatusBadge');
+            try {
+                SQL = await initSqlJs({
+                    locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/${file}`
+                });
+
+                const savedDb = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (savedDb) {
+                    const uInt8Array = new Uint8Array(JSON.parse(savedDb));
+                    db = new SQL.Database(uInt8Array);
+                } else {
+                    db = new SQL.Database();
+                    createDefaultTables();
+                    insertSampleData();
+                }
+
+                badge.className = "text-[10px] font-semibold text-emerald-400 px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20 flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-circle-check"></i> Offline SQL Hazır`;
+
+                renderWordGrid();
+
+            } catch (err) {
+                console.error("SQLite init error:", err);
+                badge.className = "text-[10px] font-semibold text-rose-400 px-2 py-0.5 bg-rose-500/10 rounded-full border border-rose-500/20 flex items-center gap-1";
+                badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> SQL Hata`;
+            }
+        }
+
+        function createDefaultTables() {
+            db.run(`
+                CREATE TABLE IF NOT EXISTS words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    english TEXT NOT NULL,
+                    turkish TEXT NOT NULL,
+                    phonetic TEXT,
+                    emoji TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS sentences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    english TEXT NOT NULL,
+                    turkish TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            saveDbToLocalStorage();
+        }
+
+        function insertSampleData() {
+            const wordSamples = [
+                ['Apple', 'Elma', 'Epıl', '🍎'],
+                ['Book', 'Kitap', 'Buk', '📖'],
+                ['Computer', 'Bilgisayar', 'Kompütır', '💻'],
+                ['Sun', 'Güneş', 'San', '☀️'],
+                ['Water', 'Su', 'Vatır', '💧'],
+                ['House', 'Ev', 'Haus', '🏠'],
+                ['Coffee', 'Kahve', 'Kafi', '☕']
+            ];
+
+            const sentenceSamples = [
+                ['How are you doing today?', 'Bugün nasılsın?'],
+                ['Practice makes perfect.', 'Pratik yapmak mükemmelleştirir.'],
+                ['Knowledge is power.', 'Bilgi güçtür.']
+            ];
+
+            const stmt1 = db.prepare("INSERT INTO words (english, turkish, phonetic, emoji) VALUES (?, ?, ?, ?)");
+            wordSamples.forEach(s => stmt1.run(s));
+            stmt1.free();
+
+            const stmt2 = db.prepare("INSERT INTO sentences (english, turkish) VALUES (?, ?)");
+            sentenceSamples.forEach(s => stmt2.run(s));
+            stmt2.free();
+
+            saveDbToLocalStorage();
+        }
+
+        function switchPage(pageNumber) {
+            currentActivePage = pageNumber;
+            const page1 = document.getElementById('page1');
+            const page2 = document.getElementById('page2');
+            const page3 = document.getElementById('page3');
+            const page4 = document.getElementById('page4');
+            
+            const tab1 = document.getElementById('navTab1');
+            const tab2 = document.getElementById('navTab2');
+            const tab3 = document.getElementById('navTab3');
+            const tab4 = document.getElementById('navTab4');
+
+            const mobNav1 = document.getElementById('mobNav1');
+            const mobNav2 = document.getElementById('mobNav2');
+            const mobNav3 = document.getElementById('mobNav3');
+            const mobNav4 = document.getElementById('mobNav4');
+
+            page1.classList.add('hidden');
+            page2.classList.add('hidden');
+            page3.classList.add('hidden');
+            if (page4) page4.classList.add('hidden');
+
+            const tabInactiveClass = "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-slate-400 hover:text-white hover:bg-slate-800/60 whitespace-nowrap";
+            tab1.className = tabInactiveClass;
+            tab2.className = tabInactiveClass;
+            tab3.className = tabInactiveClass;
+            if (tab4) tab4.className = tabInactiveClass;
+
+            [mobNav1, mobNav2, mobNav3, mobNav4].forEach(btn => {
+                if(btn) btn.className = "flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 font-medium px-3 py-1 rounded-xl transition active:scale-95";
+            });
+
+            const tabActiveClass = "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all bg-sky-600 text-white shadow-md shadow-sky-600/20 whitespace-nowrap";
+            const mobActiveClass = "flex flex-col items-center gap-1 text-sky-400 font-bold px-3 py-1 rounded-xl transition active:scale-95";
+
+            if (pageNumber === 1) {
+                page1.classList.remove('hidden');
+                tab1.className = tabActiveClass;
+                if(mobNav1) mobNav1.className = mobActiveClass;
+                renderWordGrid();
+            } else if (pageNumber === 2) {
+                page2.classList.remove('hidden');
+                tab2.className = tabActiveClass;
+                if(mobNav2) mobNav2.className = mobActiveClass;
+                loadFlashcards();
+            } else if (pageNumber === 3) {
+                page3.classList.remove('hidden');
+                tab3.className = tabActiveClass;
+                if(mobNav3) mobNav3.className = mobActiveClass;
+                renderSentenceGrid();
+            } else if (pageNumber === 4) {
+                if (page4) page4.classList.remove('hidden');
+                if (tab4) tab4.className = tabActiveClass;
+                if(mobNav4) mobNav4.className = mobActiveClass;
+                resetQuizViews();
+            }
+        }
+
+        let quizQuestions = [];
+        let quizCurrentIndex = 0;
+        let quizCorrectAnswers = 0;
+        let quizTotalCount = 0;
+        let quizIsAnswering = false;
+
+        function resetQuizViews() {
+            document.getElementById('quizStartScreen').classList.remove('hidden');
+            document.getElementById('quizActiveScreen').classList.add('hidden');
+            document.getElementById('quizResultScreen').classList.add('hidden');
+            document.getElementById('quizEmptyState').classList.add('hidden');
+        }
+
+        function startQuiz() {
+            const allWords = getAllWords();
+            if (allWords.length < 2) {
+                document.getElementById('quizStartScreen').classList.add('hidden');
+                document.getElementById('quizActiveScreen').classList.add('hidden');
+                document.getElementById('quizResultScreen').classList.add('hidden');
+                document.getElementById('quizEmptyState').classList.remove('hidden');
+                return;
+            }
+
+            const shuffled = [...allWords].sort(() => 0.5 - Math.random());
+            quizQuestions = shuffled.slice(0, Math.min(10, shuffled.length));
+            quizTotalCount = quizQuestions.length;
+            quizCurrentIndex = 0;
+            quizCorrectAnswers = 0;
+            quizIsAnswering = false;
+
+            document.getElementById('quizStartScreen').classList.add('hidden');
+            document.getElementById('quizEmptyState').classList.add('hidden');
+            document.getElementById('quizResultScreen').classList.add('hidden');
+            document.getElementById('quizActiveScreen').classList.remove('hidden');
+
+            renderQuizQuestion();
+        }
+
+        function renderQuizQuestion() {
+            if (quizCurrentIndex >= quizQuestions.length) {
+                finishQuiz();
+                return;
+            }
+
+            quizIsAnswering = false;
+            const currentQ = quizQuestions[quizCurrentIndex];
+            const allWords = getAllWords();
+
+            document.getElementById('quizCurrentNum').innerText = quizCurrentIndex + 1;
+            document.getElementById('quizTotalNum').innerText = quizTotalCount;
+            const currentScoreNum = quizTotalCount > 0 ? Math.round((quizCorrectAnswers / quizTotalCount) * 100) : 0;
+            document.getElementById('quizScoreDisplay').innerText = `${currentScoreNum} / 100`;
+
+            const progressPct = ((quizCurrentIndex) / quizTotalCount) * 100;
+            document.getElementById('quizProgressBar').style.width = `${progressPct}%`;
+
+            document.getElementById('quizPromptTurkish').innerText = currentQ.turkish;
+            document.getElementById('quizPromptEmoji').innerText = currentQ.emoji || '✨';
+
+            const distractors = allWords
+                .filter(w => w.id !== currentQ.id)
+                .sort(() => 0.5 - Math.random())
+                .slice(0, 3);
+
+            const options = [...distractors, currentQ].sort(() => 0.5 - Math.random());
+
+            const optionsGrid = document.getElementById('quizOptionsGrid');
+            optionsGrid.innerHTML = options.map((opt, idx) => `
+                <button onclick="handleQuizAnswer(this, ${opt.id}, ${currentQ.id}, '${escapeJsString(opt.english)}')" 
+                        class="quiz-option-btn group relative p-5 bg-slate-900 border border-slate-800 hover:border-sky-500 rounded-2xl text-left transition-all duration-200 flex items-center justify-between shadow-lg active:scale-95">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs flex items-center justify-center group-hover:bg-sky-600 group-hover:text-white transition">
+                            ${String.fromCharCode(65 + idx)}
+                        </span>
+                        <div>
+                            <h4 class="text-base font-bold text-slate-100">${escapeHtml(opt.english)}</h4>
+                            ${opt.phonetic ? `<p class="text-xs text-sky-400/80 italic mt-0.5">(${escapeHtml(opt.phonetic)})</p>` : ''}
+                        </div>
+                    </div>
+                    <i class="quiz-status-icon fa-regular fa-circle text-slate-600 text-lg transition"></i>
+                </button>
+            `).join('');
+        }
+
+        function handleQuizAnswer(buttonEl, selectedId, correctId, englishWord) {
+            if (quizIsAnswering) return;
+            quizIsAnswering = true;
+
+            const isCorrect = selectedId === correctId;
+            const allOptionBtns = document.querySelectorAll('.quiz-option-btn');
+
+            speakWord(englishWord);
+
+            if (isCorrect) {
+                quizCorrectAnswers++;
+                buttonEl.classList.remove('bg-slate-900', 'border-slate-800');
+                buttonEl.classList.add('bg-emerald-950/80', 'border-emerald-500', 'text-emerald-300');
+                buttonEl.querySelector('.quiz-status-icon').className = 'quiz-status-icon fa-solid fa-circle-check text-emerald-400 text-lg';
+                showToast("Tebrikler! Doğru cevap.", "success");
+            } else {
+                buttonEl.classList.remove('bg-slate-900', 'border-slate-800');
+                buttonEl.classList.add('bg-rose-950/80', 'border-rose-500', 'text-rose-300');
+                buttonEl.querySelector('.quiz-status-icon').className = 'quiz-status-icon fa-solid fa-circle-xmark text-rose-400 text-lg';
+
+                allOptionBtns.forEach(btn => {
+                    if (btn.getAttribute('onclick').includes(`, ${correctId},`)) {
+                        btn.classList.remove('bg-slate-900', 'border-slate-800');
+                        btn.classList.add('bg-emerald-950/60', 'border-emerald-500/80');
+                        btn.querySelector('.quiz-status-icon').className = 'quiz-status-icon fa-solid fa-circle-check text-emerald-400 text-lg';
+                    }
+                });
+                showToast("Maalesef yanlış cevap.", "error");
+            }
+
+            const liveScore = Math.round((quizCorrectAnswers / quizTotalCount) * 100);
+            document.getElementById('quizScoreDisplay').innerText = `${liveScore} / 100`;
+
+            setTimeout(() => {
+                quizCurrentIndex++;
+                renderQuizQuestion();
+            }, 1300);
+        }
+
+        function finishQuiz() {
+            document.getElementById('quizActiveScreen').classList.add('hidden');
+            document.getElementById('quizResultScreen').classList.remove('hidden');
+
+            const finalScore = Math.round((quizCorrectAnswers / quizTotalCount) * 100);
+            const wrongCount = quizTotalCount - quizCorrectAnswers;
+
+            document.getElementById('quizFinalScore').innerText = `${finalScore} / 100`;
+            document.getElementById('quizCorrectCount').innerText = quizCorrectAnswers;
+            document.getElementById('quizWrongCount').innerText = wrongCount;
+
+            const badgeIcon = document.getElementById('quizBadgeIcon');
+            const scoreComment = document.getElementById('quizScoreComment');
+
+            if (finalScore >= 80) {
+                badgeIcon.className = "w-24 h-24 mx-auto mb-4 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full flex items-center justify-center text-4xl shadow-xl";
+                badgeIcon.innerHTML = `<i class="fa-solid fa-trophy"></i>`;
+                scoreComment.className = "text-xs font-semibold text-emerald-400 mt-1";
+                scoreComment.innerText = "Süper! Mükemmel Performans 🎉";
+            } else if (finalScore >= 50) {
+                badgeIcon.className = "w-24 h-24 mx-auto mb-4 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-full flex items-center justify-center text-4xl shadow-xl";
+                badgeIcon.innerHTML = `<i class="fa-solid fa-medal"></i>`;
+                scoreComment.className = "text-xs font-semibold text-amber-400 mt-1";
+                scoreComment.innerText = "İyi İş! Biraz daha pratik yapabilirsin 👍";
+            } else {
+                badgeIcon.className = "w-24 h-24 mx-auto mb-4 bg-rose-500/20 text-rose-400 border border-rose-500/40 rounded-full flex items-center justify-center text-4xl shadow-xl";
+                badgeIcon.innerHTML = `<i class="fa-solid fa-rotate-left"></i>`;
+                scoreComment.className = "text-xs font-semibold text-rose-400 mt-1";
+                scoreComment.innerText = "Tekrar Deneyerek Gelişebilirsin 💪";
+            }
+        }
+
+        function renderWordGrid() {
+            const grid = document.getElementById('wordGrid');
+            const emptyState = document.getElementById('emptyState');
+            const searchVal = document.getElementById('searchInput').value;
+            const words = getAllWords(searchVal);
+
+            document.getElementById('wordCount').innerText = words.length;
+
+            if (words.length === 0) {
+                grid.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            grid.innerHTML = words.map(w => `
+                <div class="word-card group relative bg-slate-900/90 border border-slate-800/90 hover:border-sky-500/50 rounded-2xl p-5 transition-all duration-300 hover:shadow-xl hover:shadow-sky-500/10 flex flex-col justify-between overflow-hidden">
+                    <div class="emoji-watermark">${w.emoji || '✨'}</div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-3 relative z-10">
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20 flex items-center gap-1.5">
+                                <i class="fa-solid fa-spell-check text-[10px]"></i> ID: #${w.id}
+                            </span>
+                            
+                            <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/80">
+                                <button onclick="openModal(${w.id})" class="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition" title="Düzenle">
+                                    <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                </button>
+                                <button onclick="confirmDeleteWord(${w.id})" class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition" title="Sil">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div onclick="speakWord('${escapeJsString(w.english)}')" class="cursor-pointer group/title inline-block mb-1 relative z-10">
+                            <h3 class="text-xl font-extrabold text-slate-100 group-hover/title:text-sky-400 transition flex items-center gap-2">
+                                <span>${escapeHtml(w.english)}</span>
+                                <i class="fa-solid fa-volume-high text-xs opacity-0 group-hover/title:opacity-100 text-sky-400 transition-opacity"></i>
+                            </h3>
+                            ${w.phonetic ? `<p class="text-xs text-sky-400/90 font-medium italic mt-0.5">(${escapeHtml(w.phonetic)})</p>` : ''}
+                        </div>
+
+                        <p class="text-sm text-slate-300 font-medium mt-3 border-t border-slate-800/80 pt-2.5 relative z-10 flex items-center gap-2">
+                            <i class="fa-solid fa-arrow-right-long text-xs text-slate-500"></i>
+                            <span>${escapeHtml(w.turkish)}</span>
+                        </p>
+                    </div>
+
+                    <div class="mt-4 pt-2 flex items-center justify-between text-[11px] text-slate-500 relative z-10">
+                        <span>Tıklayarak Kadın Sesiyle Dinle</span>
+                        <i class="fa-solid fa-circle-play text-slate-600 group-hover:text-sky-400 transition"></i>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getAllSentences(filterQuery = '') {
+            if (!db) return [];
+            let query = "SELECT id, english, turkish FROM sentences";
+            let params = [];
+
+            if (filterQuery.trim() !== '') {
+                query += " WHERE english LIKE ? OR turkish LIKE ?";
+                const term = `%${filterQuery.trim()}%`;
+                params = [term, term];
+            }
+
+            query += " ORDER BY id DESC";
+
+            const stmt = db.prepare(query);
+            stmt.bind(params);
+
+            const list = [];
+            while (stmt.step()) {
+                list.push(stmt.getAsObject());
+            }
+            stmt.free();
+            return list;
+        }
+
+        function renderSentenceGrid() {
+            const grid = document.getElementById('sentenceGrid');
+            const emptyState = document.getElementById('sentenceEmptyState');
+            const searchVal = document.getElementById('sentenceSearchInput').value;
+            const sentences = getAllSentences(searchVal);
+
+            document.getElementById('sentenceCount').innerText = sentences.length;
+
+            if (sentences.length === 0) {
+                grid.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            grid.innerHTML = sentences.map(s => `
+                <div class="bg-slate-900/90 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-5 transition flex flex-col justify-between shadow-lg">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold text-sky-400 px-2.5 py-0.5 bg-sky-500/10 rounded-full border border-sky-500/20">
+                                Cümle #${s.id}
+                            </span>
+                            <div class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+                                <button onclick="speakWord('${escapeJsString(s.english)}')" class="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition" title="Sesli Dinle">
+                                    <i class="fa-solid fa-volume-high text-xs"></i>
+                                </button>
+                                <button onclick="openSentenceModal(${s.id})" class="p-1.5 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-lg transition" title="Düzenle">
+                                    <i class="fa-solid fa-pen-to-square text-xs"></i>
+                                </button>
+                                <button onclick="confirmDeleteSentence(${s.id})" class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition" title="Sil">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <h4 onclick="speakWord('${escapeJsString(s.english)}')" class="text-base font-bold text-slate-100 hover:text-sky-400 cursor-pointer transition leading-relaxed flex items-start gap-2 mb-3">
+                            <i class="fa-solid fa-quote-left text-sky-500/50 text-xs mt-1"></i>
+                            <span>${escapeHtml(s.english)}</span>
+                        </h4>
+
+                        <p class="text-sm text-slate-300 font-medium bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 flex items-start gap-2">
+                            <i class="fa-solid fa-language text-emerald-400 text-xs mt-1"></i>
+                            <span>${escapeHtml(s.turkish)}</span>
+                        </p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openSentenceModal(id = null) {
+            const modal = document.getElementById('sentenceModal');
+            const container = document.getElementById('sentenceModalContainer');
+            
+            document.getElementById('sentenceId').value = '';
+            document.getElementById('inputEnglishSentence').value = '';
+            document.getElementById('inputTurkishSentence').value = '';
+
+            if (id) {
+                document.getElementById('sentenceModalTitle').innerHTML = `<i class="fa-solid fa-pen-to-square text-sky-400"></i> Cümleyi Düzenle`;
+                const stmt = db.prepare("SELECT * FROM sentences WHERE id = ?");
+                stmt.bind([id]);
+                if (stmt.step()) {
+                    const row = stmt.getAsObject();
+                    document.getElementById('sentenceId').value = row.id;
+                    document.getElementById('inputEnglishSentence').value = row.english;
+                    document.getElementById('inputTurkishSentence').value = row.turkish;
+                }
+                stmt.free();
+            } else {
+                document.getElementById('sentenceModalTitle').innerHTML = `<i class="fa-solid fa-circle-plus text-sky-400"></i> Yeni Cümle Ekle`;
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                container.classList.remove('scale-95');
+                container.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeSentenceModal() {
+            const modal = document.getElementById('sentenceModal');
+            const container = document.getElementById('sentenceModalContainer');
+
+            container.classList.remove('scale-100');
+            container.classList.add('scale-95');
+            modal.classList.add('opacity-0');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function saveSentence(e) {
+            e.preventDefault();
+            const id = document.getElementById('sentenceId').value;
+            const english = document.getElementById('inputEnglishSentence').value.trim();
+            const turkish = document.getElementById('inputTurkishSentence').value.trim();
+
+            if (!english || !turkish) {
+                showToast("Lütfen tüm alanları doldurun!", "error");
+                return;
+            }
+
+            if (id) {
+                const stmt = db.prepare("UPDATE sentences SET english = ?, turkish = ? WHERE id = ?");
+                stmt.run([english, turkish, id]);
+                stmt.free();
+                showToast("Cümle güncellendi.", "success");
+            } else {
+                const stmt = db.prepare("INSERT INTO sentences (english, turkish) VALUES (?, ?)");
+                stmt.run([english, turkish]);
+                stmt.free();
+                showToast("Yeni cümle eklendi.", "success");
+            }
+
+            saveDbToLocalStorage();
+            closeSentenceModal();
+            renderSentenceGrid();
+        }
+
+        function confirmDeleteSentence(id) {
+            showConfirm("Bu cümleyi silmek istediğinize emin misiniz?", () => {
+                const stmt = db.prepare("DELETE FROM sentences WHERE id = ?");
+                stmt.run([id]);
+                stmt.free();
+                saveDbToLocalStorage();
+                renderSentenceGrid();
+                showToast("Cümle silindi.", "info");
+            });
+        }
+
+        function handleEnglishInput() {
+            const eng = document.getElementById('inputEnglish').value.trim();
+            const phoneticInput = document.getElementById('inputPhonetic');
+            const emojiInput = document.getElementById('inputEmoji');
+
+            if (eng) {
+                phoneticInput.value = generateApproximatePhonetic(eng);
+                const lower = eng.toLowerCase();
+                if (emojiDictionary[lower]) {
+                    emojiInput.value = emojiDictionary[lower];
+                }
+            }
+        }
+
+        function generateApproximatePhonetic(word) {
+            let str = word.toLowerCase();
+            str = str.replace(/tion/g, 'şın')
+                     .replace(/ph/g, 'f')
+                     .replace(/ee/g, 'i')
+                     .replace(/oo/g, 'u')
+                     .replace(/ck/g, 'k')
+                     .replace(/ea/g, 'i')
+                     .replace(/th/g, 't')
+                     .replace(/c([eiy])/g, 's$1')
+                     .replace(/c/g, 'k')
+                     .replace(/w/g, 'v')
+                     .replace(/x/g, 'ks')
+                     .replace(/y$/g, 'i');
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function openModal(id = null) {
+            const modal = document.getElementById('wordModal');
+            const modalContainer = document.getElementById('modalContainer');
+            const form = document.getElementById('wordForm');
+
+            form.reset();
+            document.getElementById('wordId').value = '';
+
+            if (id) {
+                document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-pen-to-square text-sky-400"></i> Kelimeyi Düzenle`;
+                const stmt = db.prepare("SELECT * FROM words WHERE id = ?");
+                stmt.bind([id]);
+                if (stmt.step()) {
+                    const row = stmt.getAsObject();
+                    document.getElementById('wordId').value = row.id;
+                    document.getElementById('inputEnglish').value = row.english;
+                    document.getElementById('inputTurkish').value = row.turkish;
+                    document.getElementById('inputPhonetic').value = row.phonetic || '';
+                    document.getElementById('inputEmoji').value = row.emoji || '';
+                }
+                stmt.free();
+            } else {
+                document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-circle-plus text-sky-400"></i> Yeni Kelime Ekle`;
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContainer.classList.remove('scale-95');
+                modalContainer.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('wordModal');
+            const modalContainer = document.getElementById('modalContainer');
+
+            modalContainer.classList.remove('scale-100');
+            modalContainer.classList.add('scale-95');
+            modal.classList.add('opacity-0');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function saveWord(e) {
+            e.preventDefault();
+            const id = document.getElementById('wordId').value;
+            const english = document.getElementById('inputEnglish').value.trim();
+            const turkish = document.getElementById('inputTurkish').value.trim();
+            const phonetic = document.getElementById('inputPhonetic').value.trim();
+            const emoji = document.getElementById('inputEmoji').value.trim() || '✨';
+
+            if (!english || !turkish) {
+                showToast("Lütfen gerekli alanları doldurun!", "error");
+                return;
+            }
+
+            if (id) {
+                const stmt = db.prepare("UPDATE words SET english = ?, turkish = ?, phonetic = ?, emoji = ? WHERE id = ?");
+                stmt.run([english, turkish, phonetic, emoji, id]);
+                stmt.free();
+                showToast("Kelime başarıyla güncellendi.", "success");
+            } else {
+                const stmt = db.prepare("INSERT INTO words (english, turkish, phonetic, emoji) VALUES (?, ?, ?, ?)");
+                stmt.run([english, turkish, phonetic, emoji]);
+                stmt.free();
+                showToast("Yeni kelime eklendi.", "success");
+            }
+
+            saveDbToLocalStorage();
+            closeModal();
+
+            if (currentActivePage === 1) renderWordGrid();
+            else loadFlashcards();
+        }
+
+        function loadFlashcards() {
+            flashcardList = getAllWords();
+            currentCardIndex = 0;
+            isCardFlipped = false;
+
+            const container = document.getElementById('flashcardContainer');
+            const emptyState = document.getElementById('flashcardEmptyState');
+
+            if (flashcardList.length === 0) {
+                container.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+
+            updateFlashcardUI();
+        }
+
+        function updateFlashcardUI() {
+            if (flashcardList.length === 0) return;
+
+            const flipper = document.getElementById('cardFlipper');
+            if (isCardFlipped) {
+                flipper.classList.remove('rotate-y-180');
+                isCardFlipped = false;
+            }
+
+            const card = flashcardList[currentCardIndex];
+            const isEngToTr = studyDirection === 'engToTr';
+
+            const frontText = isEngToTr ? card.english : card.turkish;
+            const frontSubtext = isEngToTr ? (card.phonetic ? `(${card.phonetic})` : '') : `(${card.english})`;
+            const frontHeader = isEngToTr ? '<i class="fa-solid fa-circle-question"></i> Soru (İngilizce)' : '<i class="fa-solid fa-circle-question"></i> Soru (Türkçe)';
+
+            document.getElementById('cardFrontHeaderLabel').innerHTML = frontHeader;
+            document.getElementById('cardFrontText').innerText = frontText;
+            document.getElementById('cardFrontSubtext').innerText = frontSubtext;
+            document.getElementById('cardFrontEmoji').innerText = card.emoji || '✨';
+
+            const backText = isEngToTr ? card.turkish : card.english;
+            document.getElementById('cardBackText').innerText = backText;
+            document.getElementById('cardBackEmoji').innerText = card.emoji || '✨';
+
+            document.getElementById('flashcardCounter').innerText = `${currentCardIndex + 1} / ${flashcardList.length}`;
+            const progressPercent = ((currentCardIndex + 1) / flashcardList.length) * 100;
+            document.getElementById('flashcardProgressBar').style.width = `${progressPercent}%`;
+        }
+
+        function flipCurrentCard() {
+            const flipper = document.getElementById('cardFlipper');
+            isCardFlipped = !isCardFlipped;
+            if (isCardFlipped) flipper.classList.add('rotate-y-180');
+            else flipper.classList.remove('rotate-y-180');
+        }
+
+        function nextFlashcard() {
+            if (flashcardList.length === 0) return;
+            currentCardIndex = (currentCardIndex + 1) % flashcardList.length;
+            updateFlashcardUI();
+        }
+
+        function prevFlashcard() {
+            if (flashcardList.length === 0) return;
+            currentCardIndex = (currentCardIndex - 1 + flashcardList.length) % flashcardList.length;
+            updateFlashcardUI();
+        }
+
+        function shuffleFlashcards() {
+            if (flashcardList.length <= 1) return;
+            for (let i = flashcardList.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [flashcardList[i], flashcardList[j]] = [flashcardList[j], flashcardList[i]];
+            }
+            currentCardIndex = 0;
+            updateFlashcardUI();
+            showToast("Kartlar karıştırıldı!", "info");
+        }
+
+        function setStudyDirection(dir) {
+            studyDirection = dir;
+            const btnEng = document.getElementById('modeEngToTr');
+            const btnTr = document.getElementById('modeTrToEng');
+
+            if (dir === 'engToTr') {
+                btnEng.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition bg-sky-600 text-white shadow";
+                btnTr.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition text-slate-400 hover:text-white";
+            } else {
+                btnTr.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition bg-sky-600 text-white shadow";
+                btnEng.className = "px-3.5 py-1.5 rounded-lg text-xs font-semibold transition text-slate-400 hover:text-white";
+            }
+
+            updateFlashcardUI();
+        }
+
+        function speakCurrentCardPrompt() {
+            if (flashcardList.length === 0) return;
+            const card = flashcardList[currentCardIndex];
+            const text = studyDirection === 'engToTr' ? card.english : card.turkish;
+            speakWord(text);
+        }
+
+        function speakCurrentCardTarget() {
+            if (flashcardList.length === 0) return;
+            const card = flashcardList[currentCardIndex];
+            const text = studyDirection === 'engToTr' ? card.turkish : card.english;
+            speakWord(text);
+        }
+
+        function confirmDeleteWord(id) {
+            showConfirm("Bu kelimeyi silmek istediğinize emin misiniz?", () => {
+                const stmt = db.prepare("DELETE FROM words WHERE id = ?");
+                stmt.run([id]);
+                stmt.free();
+                saveDbToLocalStorage();
+                renderWordGrid();
+                showToast("Kelime silindi.", "info");
+            });
+        }
+
+        function confirmResetData() {
+            showConfirm("Tüm veriler varsayılan örnek veriler ile değiştirilecek. Onaylıyor musunuz?", () => {
+                db.run("DROP TABLE IF EXISTS words");
+                createDefaultTables();
+                insertSampleData();
+                renderWordGrid();
+                showToast("Veriler sıfırlandı.", "info");
+            });
+        }
+
+        function exportDatabase() {
+            if (!db) return;
+            const binaryArray = db.export();
+            const blob = new Blob([binaryArray], { type: 'application/x-sqlite3' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `vocab_master_${new Date().toISOString().slice(0,10)}.sqlite`;
+            a.click();
+            showToast("SQL Veritabanı bilgisayarınıza indirildi.", "success");
+        }
+
+        function importDatabase(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    const Uints = new Uint8Array(reader.result);
+                    db = new SQL.Database(Uints);
+                    saveDbToLocalStorage();
+                    if (currentActivePage === 1) renderWordGrid();
+                    else loadFlashcards();
+                    showToast("SQL Veritabanı başarıyla içe aktarıldı!", "success");
+                } catch (err) {
+                    console.error("Import error:", err);
+                    showToast("Geçersiz SQLite veritabanı dosyası!", "error");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = '';
+        }
+
+        function showConfirm(message, onConfirm) {
+            const modal = document.getElementById('confirmModal');
+            document.getElementById('confirmMessage').innerText = message;
+            
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+
+            const okBtn = document.getElementById('confirmOkBtn');
+            const cancelBtn = document.getElementById('confirmCancelBtn');
+
+            const closeConfirm = () => {
+                modal.classList.add('opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 200);
+            };
+
+            okBtn.onclick = () => {
+                closeConfirm();
+                onConfirm();
+            };
+            cancelBtn.onclick = closeConfirm;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+
+            let bgClass = "bg-slate-800 border-slate-700 text-slate-100";
+            let icon = "fa-circle-info text-sky-400";
+
+            if (type === 'success') {
+                bgClass = "bg-slate-900 border-emerald-500/50 text-emerald-300";
+                icon = "fa-circle-check text-emerald-400";
+            } else if (type === 'error') {
+                bgClass = "bg-slate-900 border-rose-500/50 text-rose-300";
+                icon = "fa-circle-xmark text-rose-400";
+            }
+
+            toast.className = `toast-animate pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border ${bgClass} shadow-xl text-xs font-semibold backdrop-blur-md max-w-xs sm:max-w-md`;
+            toast.innerHTML = `<i class="fa-solid ${icon} text-base shrink-0"></i><span>${message}</span>`;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function escapeJsString(str) {
+            if (!str) return '';
+            return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+    </script>
+</body>
+</html>
